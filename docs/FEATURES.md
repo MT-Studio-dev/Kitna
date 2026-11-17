@@ -1,42 +1,53 @@
 # Local feature and verification matrix
 
-Scope: the modules requested in this conversation, adapted to one phone with no authentication or cloud sync. All records and participants belong to one local book. Separate logins, email invitations, initiating bank transfers, bank/card imports, and paid subscriptions are outside this single-device tracker. Repayments made through a bank can still be recorded manually.
+Scope: one phone, one local book, no registration or cloud sync. Friends are named participants in local records. Repayments made through cash, UPI or a bank can be recorded manually; the app does not initiate or verify transfers.
 
-This matrix separates reviewed implementation, executed tests, and device-specific checks. The final verification command passed `:core:test`, `:app:testDebugUnitTest`, and `:app:lintDebug`; XML reports contain 20 core tests and 19 app tests, with zero failures, errors, or skips.
+The completed v0.3 run in `verify-v03-final.log` passed `:core:test`, `:app:testDebugUnitTest`, `:app:assembleDebug` and `:app:lintDebug`. The XML reports contain **31 core tests and 31 app tests**, with no failures, errors or skips. This matrix distinguishes executed tests from reviewed implementation; it does not claim every control on every Android device was exercised.
 
-| Requested module | Required local behavior | Implementation evidence | Verification status |
-|---|---|---|---|
-| Accounts | Editable local profile; no login or registration | `KitnaViewModel.kt`, `ui/KitnaApp.kt`, `ui/Editors.kt` | Launch and all four tabs passed; local-profile save path reviewed; account and dark-theme renders generated |
-| Friends | Add, rename, remove eligible people; individual expense/balance view | `core/BookActions.kt`, `ui/KitnaApp.kt`, `ui/Editors.kt` | UI creation and direct-ledger flow passed; rename, duplicate-name, empty-direct cleanup and stable-ID retry core cases passed |
-| Groups | Create, edit name/members, archive/restore, remove eligible groups | `core/BookActions.kt`, `ui/KitnaApp.kt`, `ui/Editors.kt` | UI creation/member selection passed; archive and history-breaking membership protections passed in core tests; settings implementation reviewed |
-| Expenses | Create, edit, delete/restore; dates/categories/notes and history | `core/Models.kt`, `core/BookActions.kt`, `ui/Editors.kt` | Full UI create/edit/delete/restore and durable-history assertions passed; date/category/notes implementation reviewed |
-| Payers | Single payer and multiple contributions; exact total validation | `core/Accounting.kt`, `core/BookValidation.kt`, `ui/Editors.kt` | UI contributions ₹100 + ₹50 = ₹150 passed with durable allocations; invalid contributions rejected in core tests |
-| Splitting | Equal, exact amounts, percentages, shares, and adjustment input | `core/Accounting.kt`, `ui/Editors.kt` | Equal and 50/30/20 percentage UI paths passed; paise rounding, large weights, adjustments and invalid inputs covered in core tests; remaining mode controls reviewed |
-| Balances | Correct friend/group balances after all edits and payments | `core/Accounting.kt`, `core/BookActions.kt`, `ui/KitnaApp.kt` | UI ledger ends at expected ₹12.50 after expense edit, ₹50 payment, deletion/restoration; randomized and cyclic core cases passed |
-| Debt simplification | Group setting; repayment suggestions preserve balances | `core/Accounting.kt`, `core/Models.kt`, `ui/Editors.kt` | Simplified/unsimplified net consistency, cycles and archive safety core tests passed; settings toggle and balance presentation reviewed |
-| Settlements | Record/edit/delete full or partial external payments with method/date/reference | `core/Models.kt`, `core/BookActions.kt`, `ui/Editors.kt` | UI partial repayment and new-friend advance passed; edit/delete corrections and net-zero pair obligation core cases passed; editor controls reviewed |
-| Collaboration | Local comments with author selection and local change history | `core/Models.kt`, `core/BookActions.kt`, `ui/Editors.kt` | UI self-comment survives expense deletion/restoration; durable revision assertions and member-author core validation passed; no remote collaboration implied |
-| Offline access | All features run locally; records survive process restart | `data/LocalStore.kt`, `AndroidManifest.xml` | Six Room runtime cases passed: reopen, legacy row, concurrent writes, failed-write safety, oversized Unicode book, oversized legacy single-row recovery |
-| Data portability | CSV export; full JSON backup and validated confirmed replacement restore | `core/BookExport.kt`, `core/BookValidation.kt`, `data/LocalStore.kt`, `ui/KitnaApp.kt` | CSV escaping/content and JSON round-trip/invalid-restore tests passed; SAF launch/result code reviewed; actual Android picker remains a device check |
-| Reports | Spending by category/month/group/person without counting repayments as expenses | `ui/Screens.kt`, `core/Models.kt` | Populated UI asserts ₹490.00 personal spending and generates report PNG; grouping/calculation implementation reviewed |
-| Search and filters | Description/participant search, group/category/date filtering | `ui/KitnaApp.kt`, `ui/Screens.kt` | Seven filter tests passed, including inclusive limits, invalid ranges and participant-search filter-bypass regression |
-| Interface and navigation | Splitwise-style screen hierarchy, readable rows, stable forms, clear errors | `MainActivity.kt`, `ui/KitnaApp.kt`, `ui/Editors.kt` | Five full UI cases and one native-render flow passed; eight nonblank PNGs generated; physical keyboard/inset behavior remains a device check |
+## Requested changes in v0.3
 
-## Test evidence locations
+| Requirement | Implementation | Evidence |
+|---|---|---|
+| Keep records when updating | Same application ID, signing certificate, `kitna.db` filename and Room schema 1; compatible model defaults; private per-version safety snapshot before rewriting a valid old book | Five `LocalStoreUpdateRuntimeTest` cases preserve exact stored dates and all record types, retain earlier snapshots, check untracked old installations, reject corrupt/unsupported old data without destructive fallback, and erase safety copies on explicit reset |
+| Show remaining payer contributions | `PayerAllocation.summary()` uses integer paise; the editor shows Remaining or Overpaid and can fill a person's amount with Use remaining | Core tests cover ₹1,000 − ₹450 = ₹550, ₹1,000 − ₹350 = ₹650, exact allocation, invalid negative inputs and overpayment. UI test records ₹450 + ₹550, rejects ₹450 + ₹600, and verifies durable allocations |
+| Fix home search | `BookSearch` handles trimmed case-insensitive words across record fields, names, categories, notes, dates and normalized currency amounts; home search lists matching records rather than only filtering group names | Four core search cases and three full home-search cases cover `TAXI`, Travel, `Alex pickup`, `₹1,000.50`, repayments, deleted-record exclusion, no-match state, clear/close and opening results |
+| Automatic categories with manual choice | `ExpenseCategories.suggest()` is a local whole-word/phrase helper; new expense descriptions update the suggestion while Auto-categorize is on. Choosing another category turns the switch off | Core cases cover car/train/taxi, plurals, mixed case, specific phrases and substring false matches. UI cases verify manual override, re-enabling auto mode, and keeping an existing manual category while changing its description |
+| Category visuals | Shared vector category symbols appear in expense rows, category choices and reports | Code review and native-render flow; the populated expense and report PNGs show the actual Activity output |
+| Kitna logo | Original vector mark, adaptive launcher foreground/background and Android themed monochrome icon | Assets under `app/src/main/res/`; portable artwork in `docs/kitna-logo.svg` and `docs/kitna-logo.png` |
+| Group icon and color choices | Twelve stable icon IDs and ten color IDs; style fields stored with the group and included in JSON backups | Core save/rename/serialization tests and UI picker test confirm a Plane/Blue group persists, while a cancelled Car/Red change leaves the committed choice intact |
 
-- Pure Kotlin tests: `core/src/test/kotlin/app/kitna/core/AccountingTest.kt` and `BookActionsTest.kt`; reports under `core/build/reports/tests/test/`.
-- Android local runtime tests: `app/src/test/`; reports under `app/build/reports/tests/testDebugUnitTest/`.
-- Android lint: `app/build/reports/lint-results-debug.html`, when successfully generated.
-- APK: `app/build/outputs/apk/debug/app-debug.apk`; verify with the installed SDK `apksigner`.
+Update identity, private signing-key location and the public certificate fingerprint are documented in [UPDATES.md](UPDATES.md). Internal snapshots are not protection against uninstalling, Android Clear storage, or losing the phone; portable JSON backups remain available in Account.
 
-Evidence comes from the current source revision's test reports. An earlier revision's passing tests, a build alone, or an implementation filename do not prove a complete feature works. Test coverage is described above rather than claiming every input/device combination was exercised.
+## Original local modules
 
-## Rendered review artifacts
+| Module | Local behavior | Evidence |
+|---|---|---|
+| Profile | Editable name; no login or registration | Launch/all tabs pass; profile save implementation reviewed; account and dark-theme renders generated |
+| Friends | Add, rename and remove eligible participants; direct expense and balance view | UI creation and direct-ledger flow; duplicate-name, stable-ID retry, direct-ledger reuse and rename core cases |
+| Groups | Create/edit name, members, type and appearance; archive/restore; delete empty groups | UI creation/member selection/style cases; core membership/history/archive protection cases |
+| Expenses | Create/edit/delete/restore; dates, categories, notes and full revision snapshots | UI create/edit/delete/restore and durable-history checks; domain validations |
+| Payers | One payer or multiple exact contributions | UI multiple-payer percentage expense, remaining/overpayment case; core contribution checks |
+| Splitting | Equal, exact amounts, percentages, shares and signed adjustments | Equal and 50/30/20 percentage UI flows; core paise, large-weight, adjustment and invalid-input cases; remaining controls reviewed |
+| Balances | Friend/group totals after edits and payments | Durable UI ledger ends at ₹12.50 after an expense edit, ₹50 payment and deletion/restoration; randomized and cyclic core cases |
+| Debt simplification | Optional group setting; pairwise debts remain when disabled | Core simplified/unsimplified net consistency, cycles and archive safety; setting implementation reviewed |
+| Settlements | Record/edit/delete external payments with method, date and reference | UI partial repayment and new-friend advance; core correction/deletion and net-zero pair obligation cases; editor controls reviewed |
+| Comments/history | Local author selection and expense comments; local activity and revision history | UI comment survives deletion/restoration; durable snapshots and member-author core checks |
+| Offline access | Records stay in app-private Room storage | Six Room runtime cases: reopen, legacy row, concurrent writes, failed-write safety, large Unicode book and oversized legacy row recovery; merged manifest has no internet permission |
+| Portability | CSV export; full JSON backup and validated confirmed replacement restore | Core CSV escaping/content and JSON round-trip; failed-restore runtime safety; Android picker launch/result code reviewed |
+| Reports | Personal share by category, month, group and person; repayments excluded from spending | Populated render flow asserts ₹490 personal spending; report grouping/calculation implementation reviewed |
+| Search/filters | Description, notes, names, categories, dates and amounts; category/person/date/amount filters | Seven filter tests plus v0.3 core/home-search tests; query matches cannot bypass active filters |
+| UI/navigation | Friends, Groups, Activity and Account; full-screen saved drafts; light/dark themes | Five original complete UI cases, four new-feature cases and actual native-render review flow |
 
-`app/build/screenshots/` contains `groups-populated-sdk28.png`, `group-details-sdk28.png`, `expense-form-sdk28.png`, `expense-details-sdk28.png`, `friends-populated-sdk28.png`, `account-sdk28.png`, `reports-sdk28.png`, and `account-dark-sdk28.png`. They are drawn from the actual Activity decor view using Robolectric native graphics and a Bitmap/Canvas. Each render asserts a nonempty PNG and nonuniform sampled pixels. They are simulation renders, not photographs or screenshots from a physical phone.
+## Evidence locations
 
-Android lint completed with zero errors and 13 warnings: eight dependency-update suggestions, two Modifier-parameter style warnings, two mutable-collection-state warnings, and one SharedPreferences KTX suggestion. The editor collection updates replace copied lists instead of mutating an existing state list in place.
+- Core XML/HTML reports: `core/build/test-results/test/`, `core/build/reports/tests/test/`.
+- Android-side XML/HTML reports: `app/build/test-results/testDebugUnitTest/`, `app/build/reports/tests/testDebugUnitTest/`.
+- Lint: `app/build/reports/lint-results-debug.html` and `.txt`.
+- APK: `app/build/outputs/apk/debug/app-debug.apk`.
+- Rendered review PNGs: `app/build/screenshots/`. The flow captures populated groups, group details, icon/color choices, expense entry, multiple-payer remainder, expense details, friends, account, reports and dark theme.
 
-## Runtime environment audit
+The render test draws the active Activity or Dialog decor view into a bitmap using Robolectric native graphics. It checks for nonempty, nonuniform PNG output. These are simulation renders, not screenshots from a physical phone.
 
-The initial audit found no connected device (`adb devices -l` was empty), no Android emulator package/system image, and no AVD. SDK platforms/build-tools 34 and 35 and platform-tools were installed. `Win32_Processor` reported firmware virtualization and second-level address translation unavailable. Robolectric SDK 28 runtime and native-render verification completed as the available local alternative. Real-device validation remains distinct from those JVM tests. Android SAF file-picker behavior, the system keyboard, and API/device-specific edge-to-edge rendering have not been exercised on a phone.
+## Verification limits
+
+Robolectric SDK 28 runs the Android-side tests. No physical phone or emulator was connected during this work. Android file-picker interaction, system keyboard behavior and device/API-specific insets still need a device check. JSON imports have a 20 MB safety limit. Lint currently has zero errors; remaining warnings are dependency-update and code-style suggestions, not a claim that phone-specific behavior has been tested.

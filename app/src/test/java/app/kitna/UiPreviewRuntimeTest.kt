@@ -14,6 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadows.ShadowDialog
 import java.io.File
 
 /** Rendered review artifacts, not golden-image comparisons or device screenshots. */
@@ -31,7 +32,10 @@ class UiPreviewRuntimeTest {
         checkNotNull(output.parentFile).mkdirs()
         lateinit var bitmap: Bitmap
         compose.runOnUiThread {
-            val decor = compose.activity.window.decorView
+            // Compose dialogs live in a separate window. Capturing only the
+            // Activity would misleadingly show the obscured editor underneath.
+            val dialog = ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }
+            val decor = dialog?.window?.decorView ?: compose.activity.window.decorView
             check(decor.width > 0 && decor.height > 0) { "Window has not been laid out." }
             bitmap = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
             decor.draw(Canvas(bitmap))

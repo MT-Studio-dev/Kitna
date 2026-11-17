@@ -143,7 +143,7 @@ class MainActivityRuntimeTest {
         compose.onNodeWithText("Add expense", useUnmergedTree = true).performClick()
         compose.onNodeWithText("Description").performTextInput("Shared dinner")
         compose.onNodeWithText("Total amount").performTextInput("150.00")
-        compose.onAllNodes(isToggleable()).onFirst().performClick()
+        compose.onNodeWithContentDescription("Multiple people paid").performClick()
         compose.onNodeWithText("You paid · ₹").performScrollTo().performTextInput("100.00")
         compose.onNodeWithText("Alex paid · ₹").performScrollTo().performTextInput("50.00")
         compose.onNodeWithText("Equal").performScrollTo().performClick()
