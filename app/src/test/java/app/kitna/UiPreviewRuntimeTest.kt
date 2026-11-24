@@ -98,7 +98,8 @@ class UiPreviewRuntimeTest {
         compose.onAllNodesWithText("₹490.00").onFirst().assertIsDisplayed()
         screenshot("reports")
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Theme: System").performScrollTo().performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Theme: System"))
+        compose.onNodeWithText("Theme: System").performClick()
         compose.onNodeWithText("Dark").performClick()
         screenshot("account-dark")
     }

@@ -1,61 +1,82 @@
 # Kitna
 
-Kitna is a single-device Android expense tracker for friends. Create a local profile, add people by name, and track shared bills and repayments. Everything is stored in the app's private database on your phone. No account registration, login, cloud project, server, or paid service is required.
+Kitna is an Android expense tracker created by **MT Studio**. Track local bills without an account, or sign in with Google to share a selected group with friends through Supabase. Members of a shared group can record expenses and repayments from their own phones and review the group's balances, budget, receipts and history.
 
-The interface follows the familiar expense-tracker structure: friends, groups, balances, expense details, activity, and account/settings. Kitna records payments you made elsewhere; a recorded payment is not bank verification.
+Amounts are INR, stored as integer paise. Kitna records payments made elsewhere; it does not initiate bank transfers or verify that a recorded payment reached a bank account.
 
-## Version 0.3
+## Version 0.5
 
-- Updates keep the existing local book and retain a private pre-update safety copy. See [update and signing instructions](docs/UPDATES.md).
-- Multiple-payer entry shows the exact **Remaining** or **Overpaid** amount, with a **Use remaining** action. A ₹1,000 bill with ₹450 entered leaves ₹550.
-- Home search covers expenses, repayments, people and groups, including descriptions, categories, notes and formatted amounts. Clear search returns to the current home tab.
-- New expenses suggest a category from description words such as **car**, **train** and **taxi** → **Travel**. Selecting a category yourself turns auto-categorization off; the switch can enable it again. Existing categories stay unchanged when an expense is opened for editing.
-- Categories have their own visual symbols, and groups can use twelve icons and ten colors. Choose **Group settings → Choose icon and colour** to change a group's appearance.
-- Kitna has a new vector logo and adaptive Android launcher icon, including a monochrome themed-icon version. The [PNG](docs/kitna-logo.png) and [SVG](docs/kitna-logo.svg) are included in `docs/`.
+- **Manga Panels:** cream-and-ink light mode, a corresponding dark theme, warm accents, comic panels and clear amount hierarchy. Budget status moves through green, amber, orange and red with text labels. Large expenses use stronger tint and bold amounts; smaller expenses keep readable text on softer surfaces.
+- **First-run guidance:** profile setup, an introduction to local/shared records, and a path to Google sign-in. The walkthrough can be reopened from Help.
+- **Faster entry:** duplicate an expense with a fresh ID/date and no copied receipt attachments, remember the previous group/payer where valid, and bring validation errors into view.
+- **Accessibility:** scalable Material typography, 48 dp controls, descriptive actions and spoken validation/status information. Real-device TalkBack and large-font verification remains necessary.
+- **Help, support and About:** split/repayment explanations, privacy information, user-selected diagnostic sharing, and the supplied MT Studio artwork. Support: [official.mtstudio.dev@gmail.com](mailto:official.mtstudio.dev@gmail.com); creator: [MT Studio on GitHub](https://github.com/MT-Studio-dev).
+- **Optional shared groups:** browser-based Google OAuth with PKCE, encrypted Android Keystore session storage, explicit invitations/participant claims, private receipt storage and version-checked shared edits.
+- **Offline shared drafts:** the visible ledger and durable outbox are saved in one local transaction. Foreground synchronization checks for changed group revisions every 20 seconds and on explicit requests; it does not use WebSocket Realtime. Failed/conflicting drafts remain visible for review.
+
+The completed v0.5 run in `verify-v05-complete.log` passed **117 tests: 50 core and 67 Android-side JVM tests**, with zero failures/errors/skips. Assembly passed and lint reported **0 errors and 26 warnings**. The **16 PostgreSQL backend tests** are a separate result. A successful hosted preflight is not a completed two-account phone test. See [FEATURES.md](docs/FEATURES.md) for evidence and limits.
+
+## Use the app
+
+1. Complete the first-run introduction and set your display name, or continue with an existing local book.
+2. Add local friends and create a group. People named in a local book do not need accounts.
+3. Add an expense, choose payer contributions and the split, then review the allocations before saving. Duplicate an existing bill when its description/allocations can be reused.
+4. Review balances and record repayments already made. Attach receipt images, set a trip budget and share a plain-text trip summary as needed.
+5. To collaborate, open **Shared groups & Google sign-in**, sign in, share the selected local group and create invitations. An invitation can connect a friend's account to an existing named participant; a new-member invitation adds another slot.
+6. A friend signs in on their phone and accepts the invitation. The group owner manages invitations and removals. A non-owner can leave while historical financial references remain.
+7. Review Pending/Failed/Conflict messages before assuming a draft reached other phones. Use **Sync now** to request an update; shared network operations require internet.
+8. Save complete ZIP backups regularly. Sign out before restoring a backup or erasing this device's book. Restoring creates local records and never replays cloud commands into a live group.
+
+## Supabase configuration
+
+The selected project is `https://hoevqcscyvjgwrqxfevc.supabase.co`. The Android client uses its publishable key and the signed-in user's session. Google Client Secrets, database passwords and elevated server keys stay outside the app.
+
+Google's configured callback is `https://hoevqcscyvjgwrqxfevc.supabase.co/auth/v1/callback`; Supabase's app-return allowlist includes `app.kitna://auth/callback`. Browser OAuth returns to the app, which exchanges the code using its saved PKCE verifier.
+
+See [SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) for provider setup and [CLOUD_DEPLOYMENT.md](docs/CLOUD_DEPLOYMENT.md) for the deployed RPC contract, schema and permission checks. [SHARED_GROUPS_PLAN.md](docs/SHARED_GROUPS_PLAN.md) describes identity projection, persistence and conflict handling.
+
+The hosted preflight recorded in `cloud-preflight.log` returned HTTP 200 and protocol schema 1, reported the receipt-bucket name and Google provider enabled, denied anonymous group RPC/table reads, and redirected the Google authorization request to `accounts.google.com`. It did not complete a user's Google consent flow or exercise private photos with two real accounts.
+
+The Free plan has storage, bandwidth and activity limits; inactive projects can pause. Local records remain usable offline, and shared changes remain pending until the service accepts them. Public growth is not a promise of unlimited free hosting.
+
+## Trip tools and earlier features
+
+Receipt photos, trip budgets, plain-text summaries and portable ZIP photos were introduced in v0.4. See [TRIP_FEATURES.md](docs/TRIP_FEATURES.md) for use and storage limits.
+
+Earlier features include friends/groups, five split methods, multiple payers with Remaining/Overpaid amounts, optional debt simplification, manual repayments, comments/revisions, search/filters, reports, CSV export, automatic categories with manual override, group icon/color choices and the Kitna launcher mark. A ₹1,000 bill with ₹450 entered leaves ₹550.
+
+## Data and updates
+
+Existing v0.1–v0.4 books retain Room schema version 1 and load added fields with compatible defaults. Local groups stay local until explicitly shared. A named friend is not automatically matched to a Google account by name. Sharing preserves the selected group's dates, allocations, comments and revisions, while keeping unrelated groups separate.
+
+Normal APK updates retain application ID `app.kitna`, the database file and the established test signing identity. Install over the existing app to retain local records. Internal per-version safety copies are kept before a newer version rewrites a valid stored book. See [UPDATES.md](docs/UPDATES.md).
+
+Uninstalling, clearing Android app storage or losing the device removes its local book and private photos. Android automatic app backup is disabled. Keep an exported complete ZIP before changing phones or reinstalling. Shared server records are separate from local device erase, sign out and group membership.
+
+ZIP backups include names, expenses, repayments, comments, budgets, history and referenced receipt photos. They contain private information. Exported/restored books strip cloud links and queued commands; restoration cannot silently overwrite a live shared group. Older JSON backups restore local books, but cannot carry missing image bytes between phones. CSV is a viewing/export format.
 
 ## Build and run
 
-Open this folder in Android Studio and run `app` on Android 8.0 (API 26) or later. The project uses Java 17, Kotlin, Jetpack Compose, Android SDK 35, and Room. Build dependencies need internet on the first build; using the installed app does not.
+Open the project in Android Studio and run `app` on Android 8.0/API 26 or later. The current project uses Java 17, Kotlin, Jetpack Compose, Android SDK 35 and Room. Local tools work offline; Google sign-in and shared synchronization use internet.
 
 ```powershell
 .\gradlew.bat :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
 
-The development APK is `app/build/outputs/apk/debug/app-debug.apk`. It is a debug-signed build for testing. A local resource-tool override can be supplied when Google's Maven resource-tool download is unavailable:
+The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. A resource-tool override is available when needed:
 
 ```powershell
 .\gradlew.bat :core:test :app:testDebugUnitTest :app:assembleDebug "-Pandroid.aapt2FromMavenOverride=C:\Users\manut\AppData\Local\Android\Sdk\build-tools\35.0.0\aapt2.exe"
 ```
 
-Use your own installed SDK path for that optional flag. `tools/warm_android_cache.py` is an optional recovery helper for slow dependency downloads. It retrieves official repository artifacts and checks their published hashes; normal builds do not need it.
-
-## Use the app
-
-1. Set your local display name in the profile/settings screen.
-2. Add friends by name. These are participants in your local records; they do not need to install Kitna.
-3. Add an expense with a friend, or create a group and add a group expense.
-4. Choose the payer or payer contributions and the split. Review each participant's share before saving.
-5. Open a friend or group to review balances and repayments. Record payments you have already made, including partial payments.
-6. Use reports and filters to review spending. Save a JSON backup regularly; export CSV when you want spreadsheet-readable records.
-
-## Data and compatibility
-
-Amounts are INR and are stored as integer paise. Existing v0.1 and v0.2 local books retain schema version 1 and are read with backward-compatible defaults for new fields. Stored records are not bulk-recategorized by the new keyword helper. The database stays private to this app installation. There is no background sync and no login flow.
-
-Normal app updates preserve the installed book. The app keeps the same application ID, signing identity and Room database, loads new group-appearance fields with compatible defaults, and keeps a private per-version safety snapshot before a newer build rewrites existing records. See [updating without losing data](docs/UPDATES.md) for installation instructions and safeguards. Safety copies do not survive uninstalling or clearing app data; export a JSON backup when moving or reinstalling the app.
-
-Keep the same application ID and signing key when installing an update over an existing installation. Uninstalling the app or clearing its Android app data deletes local records. Android automatic app backup is disabled, so keep your own exported backups before replacing a phone or reinstalling.
-
-A JSON backup contains names, expenses, comments, repayments, and history. Store it privately. Restoring validates the backup before replacing current records, and the app asks before replacement. CSV is for viewing/export; use JSON for a complete restore.
+Use your installed SDK path. Dependencies require internet on their first download. Supabase client settings are read from ignored local build settings; see the setup guide. A public Play release still needs production signing, current Play requirements and the remaining launch checks.
 
 ## Verification
 
-See [the feature and verification matrix](docs/FEATURES.md) for the requested modules, their implementation locations, and the evidence collected for this revision. Core accounting/domain tests are separate from Android runtime tests. Runtime tests use Robolectric, including an Android framework JAR downloaded on first use. Robolectric is a JVM simulation and does not prove device-specific rendering, keyboard, or operating-system behavior.
+The completed v0.5 Gradle verification in `verify-v05-complete.log` passed **117 tests (50 core + 67 app)** with zero failures/errors/skips, APK assembly and lint with **0 errors/26 warnings**. The app uses version code 5/version name 0.5.0 and retains the established test signing certificate. Core/JVM, Android simulation, local PostgreSQL and hosted preflight evidence cover different things.
 
-There was no connected Android device, emulator, or AVD at the initial environment audit for this revision. The build host reported hardware virtualization disabled. Any phone-specific verification still needs an actual device or a suitably configured emulator. Do not infer a passed device test from a successful APK build.
+The historical v0.4 run passed **84 tests: 41 core and 43 Android-side JVM tests**, with no failures/errors/skips. Assembly passed and lint reported 0 errors/14 warnings. Those figures describe v0.4, not a completed v0.5 run.
 
-The completed v0.3 verification run passed **62 tests**: 31 pure Kotlin accounting/domain/search/category tests and 31 Android-side JVM tests. The Android-side cases include six Room persistence cases, five simulated-update cases, five original screen flows, four new-feature flows, three home-search flows, seven filter cases, and one native-render review flow. Android lint passed with no errors; its remaining warnings concern dependency updates and code style. Rendered review PNGs are under `app/build/screenshots/`.
+The shared backend's local PGlite run passed **16 actual PostgreSQL/pgcrypto/RLS tests**. It uses small stand-ins for Supabase's auth session adapter and Storage catalog, and does not prove hosted Storage HTTP or Google login behavior. The hosted preflight checks described above are recorded separately.
 
-The tested flows include creating friends and groups, multiple payers with a percentage split, direct expenses and edits, partial repayments, a payment before any expense, comments, expense deletion/restoration, report totals, dark theme selection, automatic/manual categories, remaining/overpaid contributions, group-style persistence and cancelled picker changes. Update tests compare all record types and exact stored dates across simulated v0.2 → v0.3 and subsequent version changes. Persistence checks also include old v0.1 data, invalid-restore safety, unsupported database-version protection, concurrent updates, and Unicode books larger than Android's normal cursor window.
-
-These are Robolectric checks. Real Android file-picker interaction for import/export, OS keyboard behavior, and device-specific window/inset behavior still require a phone or emulator. JSON imports currently have a 20 MB safety limit; the app reports that limit when a selected file exceeds it.
+Native-render review PNGs are under `app/build/screenshots/`; they are simulated Activity/Dialog renders. Seven Manga screens and updated group views were visually reviewed, including creator artwork in light/dark mode, a 97%-used budget with enlarged text, expense entry and onboarding. No physical phone or emulator, two completed Google sign-ins, or cross-phone expense/receipt flow has been verified in this revision yet. Those checks remain required before a public launch.

@@ -84,9 +84,14 @@ class LocalStore(context: Context) {
         }
     }
     suspend fun restore(content: String) = withContext(Dispatchers.IO) {
-        val imported = try { json.decodeFromString<Book>(content) }
+        val imported = try { SharedBooks.portable(json.decodeFromString<Book>(content)) }
             catch (failure: IllegalArgumentException) { throw IllegalArgumentException("This is not a valid Kitna JSON backup.", failure) }
-        replace(imported)
+        // A raw JSON book may reference local photos. Never accept metadata for
+        // images missing from this device; portable ZIP restore installs them first.
+        ReceiptStore.withFileLock {
+            BookBackup.referencedPhotos(imported).forEach { ReceiptStore(appContext).verify(it) }
+            replace(imported)
+        }
     }
     /**
      * Normal APK updates keep the same application ID, signing key and database.
@@ -122,10 +127,14 @@ class LocalStore(context: Context) {
         check(upgradePreferences.edit().putLong("last_opened_version", version).commit()) { "Could not record this update. Your existing records are unchanged." }
     }
 
-    suspend fun reset() = withContext(Dispatchers.IO) {
+    suspend fun reset() = withContext(Dispatchers.IO) { ReceiptStore.withFileLock {
         mutex.withLock {
             withContext(NonCancellable) {
                 persist(Book())
+                ReceiptStore(appContext).clearPrivatePhotos()
+                val sharing = File(appContext.noBackupFilesDir, "sharing-backups")
+                sharing.listFiles().orEmpty().forEach { file -> check(file.isFile && file.canonicalFile.parentFile == sharing.canonicalFile && file.delete()) { "Could not erase a sharing safety copy. Please retry." } }
+                check(!sharing.exists() || sharing.delete()) { "Could not erase sharing safety copies. Please retry." }
                 upgradeMutex.withLock {
                     // Erase really erases the private safety copies too.
                     upgradeDirectory.listFiles().orEmpty().forEach { file ->
@@ -135,7 +144,7 @@ class LocalStore(context: Context) {
                 }
             }
         }
-    }
+    } }
     fun close() = db.close()
 
     private companion object {

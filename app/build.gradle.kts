@@ -14,8 +14,8 @@ android {
         applicationId = "app.kitna"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.5.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -27,6 +27,10 @@ android {
     val localSettings = Properties().apply {
         rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
     }
+    defaultConfig {
+        buildConfigField("String", "SUPABASE_URL", "\"${localSettings.getProperty("kitna.supabaseUrl", "")}\"")
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"${localSettings.getProperty("kitna.supabasePublishableKey", "")}\"")
+    }
     localSettings.getProperty("kitna.signingStore")?.let { keyPath ->
         signingConfigs.getByName("debug") {
             storeFile = file(keyPath)
@@ -35,7 +39,7 @@ android {
             keyPassword = "android"
         }
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {

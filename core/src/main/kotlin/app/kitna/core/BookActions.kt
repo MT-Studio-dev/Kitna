@@ -39,6 +39,7 @@ object BookActions {
         require(clean.kind in setOf("Group", "Trip", "Home", "Couple", "Direct")) { "Unknown group type." }
         require(clean.kind != "Direct" || clean.members.size == 2) { "A direct friendship must contain exactly two people." }
         GroupAppearance.validate(clean.icon, clean.color)
+        BookValidation.budget(clean.budget)
         if (old != null) {
             require(!old.archived || !clean.archived || clean == old) { "Restore this archived group before editing it." }
             require((old.kind == "Direct") == (clean.kind == "Direct")) { "A friendship cannot be converted to a group." }

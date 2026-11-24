@@ -1,5 +1,7 @@
 package app.kitna.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
@@ -27,16 +30,18 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import app.kitna.KitnaViewModel
 import app.kitna.core.*
+import app.kitna.data.BookBackup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun KitnaApp(theme:String,onTheme:(String)->Unit,vm:KitnaViewModel=viewModel()) {
     val book by vm.book.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
+    val fileTransferBusy by vm.fileTransferBusy.collectAsStateWithLifecycle()
+    val cloud by vm.cloud.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable{mutableStateOf("Groups")}
     var route by rememberSaveable{mutableStateOf("main")}
     var returnRoute by rememberSaveable{mutableStateOf("main")}
@@ -51,13 +56,21 @@ import java.time.LocalDate
     var filters by rememberSaveable{mutableStateOf(false)}
     var filter by rememberSaveable(stateSaver=ExpenseFilter.Saver){mutableStateOf(ExpenseFilter())}
     var balanceSheet by rememberSaveable{mutableStateOf(false)}
-    var restoreText by remember{mutableStateOf<String?>(null)}
+    var restoreUri by rememberSaveable{mutableStateOf<String?>(null)}
     var erase by remember{mutableStateOf(false)}
+    var duplicateExpense by rememberSaveable{mutableStateOf(false)}
     val scope=rememberCoroutineScope();val context=LocalContext.current;val snackbar=remember{SnackbarHostState()}
+    val onboardingPreferences=remember(context){context.getSharedPreferences("onboarding",android.content.Context.MODE_PRIVATE)}
+    var onboarding by rememberSaveable{mutableStateOf(!onboardingPreferences.getBoolean("complete",false))}
+    var onboardingError by rememberSaveable{mutableStateOf<String?>(null)}
+    fun finishOnboarding(){onboardingPreferences.edit().putBoolean("complete",true).apply();onboarding=false}
+    LaunchedEffect(book){val loaded=book;if(loaded!=null&&(loaded.people.size>1||loaded.groups.isNotEmpty()||loaded.people.firstOrNull{it.id=="self"}?.name!="You"))finishOnboarding()}
+    LaunchedEffect(cloud.pendingInvite){if(cloud.pendingInvite!=null){finishOnboarding();returnRoute="main";groupId=null;route="shared"}}
+    val backups=remember(vm.store){BookBackup(context.applicationContext,vm.store)}
     val searchFocus=remember{FocusRequester()}
     val keyboard=LocalSoftwareKeyboardController.current
     LaunchedEffect(search,route,book!=null){if(book!=null&&search&&route in listOf("main","group","friend"))searchFocus.requestFocus()}
-    fun edit(target:String,back:String=route){returnRoute=back;route=target}
+    fun edit(target:String,back:String=route){duplicateExpense=false;returnRoute=back;route=target}
     fun clearNavigation(){route="main";returnRoute="main";detailReturn="main";groupId=null;personId=null;expenseId=null;settlementId=null;query="";search=false;filter=ExpenseFilter();archived=false}
     fun detail(e:Expense){expenseId=e.id;detailReturn=route;route="expenseDetail"}
     fun notify(result:Result<Unit>,message:String){scope.launch{snackbar.showSnackbar(result.fold({message},{it.message?:"Could not complete that"}))}}
@@ -66,24 +79,43 @@ import java.time.LocalDate
         if(vm.book.value==null) vm.error.value=message
         else scope.launch { snackbar.showSnackbar(message) }
     }
-    val exportJson=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->val snapshot=book;if(uri!=null&&snapshot!=null)scope.launch{notify(runCatching{withContext(Dispatchers.IO){checkNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter().use{it.write(vm.store.json.encodeToString(snapshot))}}},"Backup saved")}}
-    val exportCsv=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")){uri->val snapshot=book;if(uri!=null&&snapshot!=null)scope.launch{notify(runCatching{withContext(Dispatchers.IO){checkNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter().use{it.write(BookExport.csv(snapshot))}}},"CSV exported")}}
-    val importJson=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)scope.launch{runCatching{withContext(Dispatchers.IO){checkNotNull(context.contentResolver.openInputStream(uri)).use{input->val output=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=input.read(buffer);if(n<0)break;require(output.size()+n<=20*1024*1024){"Backup is larger than 20 MB."};output.write(buffer,0,n)};output.toString("UTF-8")}}}.onSuccess{restoreText=it}.onFailure{reportFailure(it,"Could not open backup")}}}
-    fun restore(){importJson.launch(arrayOf("application/json","text/plain"))}
+    val exportBackup=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")){uri->
+        val snapshot=book
+        if(uri!=null&&snapshot!=null)scope.launch{
+            notify(vm.fileTransfer{withContext(Dispatchers.IO){checkNotNull(context.contentResolver.openOutputStream(uri)).use{backups.exportZip(snapshot,it)}}},"Complete backup saved")
+        }
+    }
+    val exportCsv=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")){uri->val snapshot=book;if(uri!=null&&snapshot!=null)scope.launch{notify(vm.fileTransfer{withContext(Dispatchers.IO){checkNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter().use{it.write(BookExport.csv(snapshot))}}},"CSV exported")}}
+    val importBackup=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->
+        if(uri!=null){
+            runCatching{context.contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)}
+            restoreUri=uri.toString()
+        }
+    }
+    fun restore(){importBackup.launch(arrayOf("application/zip","application/x-zip-compressed","application/json","text/plain","application/octet-stream"))}
     val b=book
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background){
         if(b==null)Column(Modifier.fillMaxSize().safeDrawingPadding(),horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
             if(error==null){CircularProgressIndicator();Text("Opening your records…",Modifier.padding(20.dp))}
             else{Text("Your records could not be opened",style=MaterialTheme.typography.titleLarge);Text(error!!,Modifier.padding(24.dp));OutlinedButton({vm.retryLoad()}){Text("Retry opening records")};OutlinedButton({restore()}){Text("Restore a backup")}}
-        }else when(route){
-            "expenseEdit"->ExpenseEditor(b,b.expenses.find{it.id==expenseId},groupId,vm){route=returnRoute}
+        }else if(onboarding)OnboardingScreen(onComplete={name->scope.launch{vm.renameSelf(name).onSuccess{finishOnboarding()}.onFailure{onboardingError=it.message}}},onSignIn={finishOnboarding();groupId=null;edit("shared","main")},error=onboardingError)
+        else when(route){
+            "shared"->SharedAccountScreen(b,vm,groupId){route=returnRoute}
+            "about"->AboutScreen(onBack={route=returnRoute})
+            "help"->HelpScreen(onBack={route=returnRoute},syncStatus=if(cloud.session==null)"Local records" else "Google account connected · ${b.pendingChanges.size} pending changes",onShowOnboarding={onboarding=true})
+            "expenseEdit"->ExpenseEditor(b,b.expenses.find{it.id==expenseId},groupId,vm,duplicate=duplicateExpense){route=returnRoute}
             "groupEdit"->GroupEditor(b,b.groups.find{it.id==groupId},vm){route=if(returnRoute=="group"&&vm.book.value?.groups?.none{it.id==groupId}!=false)"main" else returnRoute}
             "friendEdit"->PersonEditor(b,b.people.find{it.id==personId},vm){route=if(returnRoute=="friend"&&vm.book.value?.people?.none{it.id==personId}!=false)"main" else returnRoute}
             "settlementEdit"->{
                 val pair=if(returnRoute=="friend")b.groups.find{it.id==groupId}?.let{Accounting.transfers(b,it.id)}?.firstOrNull{(it.from=="self"&&it.to==personId)||(it.to=="self"&&it.from==personId)}else null
                 SettlementEditor(b,b.settlements.find{it.id==settlementId},groupId,pair?.from?:if(returnRoute=="friend")"self" else null,pair?.to?:if(returnRoute=="friend")personId else null,vm){route=returnRoute}
             }
-            "expenseDetail"->ExpenseDetails(b,expenseId.orEmpty(),vm,{expenseId=it.id;groupId=it.groupId;edit("expenseEdit","expenseDetail")}){route=detailReturn}
+            "expenseDetail"->ExpenseDetails(b,expenseId.orEmpty(),vm,onEdit={expenseId=it.id;groupId=it.groupId;edit("expenseEdit","expenseDetail")},onDuplicate={expenseId=it.id;groupId=it.groupId;edit("expenseEdit","expenseDetail");duplicateExpense=true}){route=detailReturn}
+            "tripSummary"->{
+                val trip=b.groups.find{it.id==groupId}
+                if(trip!=null)TripSummaryScreen(b,trip){route="group"}
+                else EmptyState("Group unavailable","Return to your groups to choose a trip.","Back"){route="main"}
+            }
             else->{
                 val group=b.groups.find{it.id==groupId};val friend=b.people.find{it.id==personId};val main=route=="main"
                 BackHandler(!main){route="main";query="";filter=ExpenseFilter()}
@@ -130,6 +162,13 @@ import java.time.LocalDate
                                             edit("settlementEdit")
                                         },onBalances={balanceSheet=true},archived=route=="group"&&group?.archived==true,hasDebts=hasDebts,appearance=if(route=="group")group else null
                                     )
+                                    if(route=="group"&&group!=null){
+                                        TripBudgetCard(b,group){edit("groupEdit")}
+                                        TextButton({route="tripSummary"},Modifier.padding(horizontal=12.dp)){Glyph("report",color=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text("Trip summary")}
+                                        val shared=b.sharedGroups.find{it.groupId==group.id}
+                                        val pending=b.pendingChanges.count{it.groupId==group.id}
+                                        TextButton({edit("shared")},Modifier.padding(horizontal=12.dp)){Glyph("group",color=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text(if(shared==null)"Share group with friends" else if(shared.revoked)"Shared group · access removed" else if(pending>0)"Shared group · $pending pending" else "Shared group · manage friends")}
+                                    }
                                     FilterBar(filtered.size,filter.active){filters=true}
                                 }
                                 expenseRows(b,filtered,::detail)
@@ -155,7 +194,10 @@ import java.time.LocalDate
                                 if(activity.isEmpty())item{EmptyState("All caught up","Expenses, payments and changes will appear here.")}
                                 items(activity,key={it.id}){a->ListItem(leadingContent={val g=b.groups.find{it.id==a.groupId};if(g!=null)GroupAvatar(g,40)else Avatar(b.personName("self"),size=40)},headlineContent={Text(a.message)},supportingContent={Text("${b.groupName(a.groupId)} · ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,java.text.DateFormat.SHORT).format(java.util.Date(a.time))}",fontSize=12.sp)})}
                             }
-                            else->accountContent(b,theme,onTheme,onProfile={personId="self";edit("friendEdit")},onReports={groupId=null;query="";filter=ExpenseFilter();route="reports"},onCsv={exportCsv.launch("kitna-expenses-${LocalDate.now()}.csv")},onBackup={exportJson.launch("kitna-backup-${LocalDate.now()}.json")},onRestore={restore()},onTrash={route="trash"},onErase={erase=true})
+                            else->{
+                                item{ListItem(modifier=Modifier.clickable{groupId=null;edit("shared")},headlineContent={Text("Shared groups & Google sign-in")},supportingContent={Text(cloud.session?.let{"${it.name} · ${b.pendingChanges.size} pending"}?:"Invite friends to record expenses together")},leadingContent={Glyph("group")})}
+                                accountContent(b,theme,onTheme,onProfile={personId="self";edit("friendEdit")},onReports={groupId=null;query="";filter=ExpenseFilter();route="reports"},onCsv={exportCsv.launch("kitna-expenses-${LocalDate.now()}.csv")},onBackup={exportBackup.launch("kitna-backup-${LocalDate.now()}.zip")},onRestore={restore()},onTrash={route="trash"},onErase={erase=true},onHelp={edit("help")},onAbout={edit("about")})
+                            }
                         }
                     }
                 }
@@ -164,6 +206,7 @@ import java.time.LocalDate
     }
     if(filters&&b!=null)FiltersDialog(b,filter,{filter=it}){filters=false}
     if(balanceSheet&&b!=null)AlertDialog(onDismissRequest={balanceSheet=false},title={Text("Balances & repayments")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){val groups=if(route=="group")b.groups.filter{it.id==groupId}else b.groups.filter{personId in it.members};groups.forEach{g->Text(g.name,fontWeight=FontWeight.Bold);val transfers=Accounting.transfers(b,g.id);if(transfers.isEmpty())Text("All settled");transfers.forEach{t->Text("${b.personName(t.from)} pays ${b.personName(t.to)} ${money(t.amount)}")}}}},confirmButton={TextButton({balanceSheet=false}){Text("Done")}})
-    if(restoreText!=null)AlertDialog(onDismissRequest={restoreText=null},title={Text("Replace your local records?")},text={Text("This replaces the records on this device. Save a JSON backup first if you need to keep them.")},confirmButton={TextButton({val payload=restoreText!!;restoreText=null;scope.launch{runCatching{withContext(Dispatchers.IO){vm.store.restore(payload)}}.onSuccess{clearNavigation();snackbar.showSnackbar("Backup restored")}.onFailure{reportFailure(it,"Restore failed")}}}){Text("Restore backup")}},dismissButton={TextButton({restoreText=null}){Text("Cancel")}})
-    if(erase)AlertDialog(onDismissRequest={erase=false},title={Text("Erase all local data?")},text={Text("All people, groups, expenses, repayments and comments will be removed. This cannot be undone without a backup.")},confirmButton={TextButton({erase=false;scope.launch{vm.resetBook().onSuccess{clearNavigation();snackbar.showSnackbar("Local records erased")}.onFailure{snackbar.showSnackbar(it.message?:"Could not erase records")}}}){Text("Erase everything",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton({erase=false}){Text("Cancel")}})
+    if(restoreUri!=null)AlertDialog(onDismissRequest={restoreUri=null},title={Text("Replace your local records?")},text={Text("This replaces your local book with the selected ZIP or JSON backup. Shared groups on the server stay unchanged. Sign out before restoring, and save a complete backup first if you need to keep current records and photos.")},confirmButton={TextButton({val selected=Uri.parse(restoreUri!!);restoreUri=null;scope.launch{vm.fileTransfer{require(cloud.session==null){"Sign out in Shared groups before restoring. Backups restore local records; they do not replace live server groups."};restoreSelectedBackup(context,vm.store,selected)}.onSuccess{clearNavigation();snackbar.showSnackbar("Backup restored")}.onFailure{reportFailure(it,"Restore failed")}}}){Text("Restore backup")}},dismissButton={TextButton({restoreUri=null}){Text("Cancel")}})
+    if(erase)AlertDialog(onDismissRequest={erase=false},title={Text("Erase all local data?")},text={Text("All people, groups, expenses, repayments, comments, history and receipt photos will be removed. This cannot be undone without a backup.")},confirmButton={TextButton({erase=false;scope.launch{vm.resetBook().onSuccess{clearNavigation();snackbar.showSnackbar("Local records erased")}.onFailure{snackbar.showSnackbar(it.message?:"Could not erase records")}}}){Text("Erase everything",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton({erase=false}){Text("Cancel")}})
+    if(fileTransferBusy)AlertDialog(onDismissRequest={},properties=DialogProperties(dismissOnBackPress=false,dismissOnClickOutside=false),title={Text("Working on your backup")},text={Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(16.dp)){CircularProgressIndicator(Modifier.size(28.dp));Text("Please wait while your records and files are copied.")}},confirmButton={})
 }

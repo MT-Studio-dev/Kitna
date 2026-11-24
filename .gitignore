@@ -1,6 +1,7 @@
 .gradle/
 .kotlin/
 **/build/
+core/bin/
 local.properties
 .idea/
 *.iml
@@ -9,3 +10,4 @@ local.properties
 supabase/.temp/
 *.log
 releases/*.apk
+**/node_modules/

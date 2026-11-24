@@ -59,6 +59,7 @@ object Accounting {
         require(expense.splitMode in setOf("Equal", "Exact amounts", "Percentages", "Shares", "Adjustments")) { "Unknown split method." }
         require(expense.splitWeights.keys.all { it in expense.shares.keys }) { "Split settings include an unknown participant." }
         require(expense.splitWeights.values.all { it in -MAX_AMOUNT..MAX_AMOUNT }) { "Invalid split settings." }
+        BookValidation.receipts(expense.receipts)
         validDate(expense.date)
     }
     fun balances(book: Book, groupId: String): Map<String, Long> {

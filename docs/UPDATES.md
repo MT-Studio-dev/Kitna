@@ -2,13 +2,13 @@
 
 Install a newer Kitna APK **over the installed app**. Android keeps an app's private data during a normal package update when the application ID and signing certificate remain the same. Kitna continues using application ID `app.kitna`, the same `kitna.db` file, and Room database schema version 1.
 
-The new group icon and color fields have backward-compatible defaults. Existing groups receive the default group icon and teal color until you choose another style. Stored expense categories, dates, notes, allocations, payments, comments, deleted records and edit history are loaded without being recategorized or replaced. The category suggestion helper only changes an expense when its editor's auto-categorization is enabled.
+New fields have backward-compatible defaults. Existing groups receive the default group icon and teal color until you choose another style, and start without a budget. Older expenses start without receipt attachments. Stored expense categories, dates, notes, allocations, payments, comments, deleted records and edit history are loaded without being recategorized or replaced. Private receipt files remain in the same installation. The category suggestion helper only changes an expense when its editor's auto-categorization is enabled.
 
 Before the first valid book is opened by a newer installed version, Kitna keeps an exact JSON safety copy in its private `noBackupFilesDir/upgrade-backups/` directory. A complete, synced temporary file is renamed into place; a partially written copy is not treated as a finished backup. Each target version has its own filename, and later edits do not replace that version's original safety copy. If validation or a required schema migration fails, Kitna reports an error and retains the stored data instead of resetting the database.
 
-These internal copies stay on the same phone and are not uploaded. They are protection for app updates, **not** a backup for uninstalling, clearing Android app data, factory-resetting, or replacing a phone. They are removed by the app's explicit **Erase all local data** action too. Use **Account → Save a backup** to keep a portable JSON copy somewhere you control.
+These internal copies stay on the same phone and are not uploaded. They are protection for app updates, **not** a backup for uninstalling, clearing Android app data, factory-resetting, or replacing a phone. They are removed by the app's explicit **Erase all local data** action too. Use **Account → Save a backup** to keep a complete portable ZIP somewhere you control. It contains the book and every receipt referenced by the current expenses or their history. An internal JSON snapshot alone does not contain the image bytes.
 
-If Android refuses an update because its signing certificate is different, do not uninstall the installed version just to bypass the error. Build or obtain an APK signed with the original key, or save a portable JSON backup from the installed app first.
+If Android refuses an update because its signing certificate is different, do not uninstall the installed version just to bypass the error. Build or obtain an APK signed with the original key, or save a portable backup from the installed app first. Versions before 0.4 export JSON; version 0.4 exports ZIP so receipt photos travel with the book.
 
 ## Developer safeguards
 

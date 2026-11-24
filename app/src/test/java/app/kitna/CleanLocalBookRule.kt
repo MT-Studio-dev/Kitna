@@ -10,5 +10,6 @@ class CleanLocalBookRule : ExternalResource() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase("kitna.db")
         context.getSharedPreferences("appearance", Context.MODE_PRIVATE).edit().clear().commit()
+        context.getSharedPreferences("onboarding", Context.MODE_PRIVATE).edit().putBoolean("complete", true).commit()
     }
 }

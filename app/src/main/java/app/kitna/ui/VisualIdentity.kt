@@ -2,6 +2,7 @@ package app.kitna.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.kitna.core.Group
@@ -48,6 +50,7 @@ internal fun groupColor(key: String): Color = Color(
         Modifier.size(size.dp)
             .clip(RoundedCornerShape((size / 4).dp))
             .background(fill)
+            .border(1.5.dp,MaterialTheme.colorScheme.onSurface,RoundedCornerShape((size / 4).dp))
             .semantics { contentDescription = "$icon icon, $color group color" },
         contentAlignment = Alignment.Center
     ) {
@@ -82,7 +85,7 @@ internal fun groupColor(key: String): Color = Color(
         modifier.size(size.dp)
             .clip(RoundedCornerShape((size / 4).dp))
             .background(ink.copy(alpha = if (dark) .14f else .10f))
-            .semantics { contentDescription = "$category category" },
+            .clearAndSetSemantics { },
         contentAlignment = Alignment.Center
     ) {
         GroupSymbol(symbol, Modifier.size((size * .60f).dp), ink)
@@ -91,23 +94,26 @@ internal fun groupColor(key: String): Color = Color(
 
 /** App mark: a K-shaped shared ledger with two payment branches. */
 @Composable internal fun KitnaMark(modifier: Modifier = Modifier, size: Int = 48) {
+    val fill = MaterialTheme.colorScheme.primaryContainer
+    val ink = MaterialTheme.colorScheme.onPrimaryContainer
+    val secondaryInk = MaterialTheme.colorScheme.primary
     Canvas(modifier.size(size.dp).clip(RoundedCornerShape((size * 24f / 108f).dp)).semantics { contentDescription = "Kitna logo" }) {
         val s = this.size.width / 108f
-        drawRoundRect(Color(0xFF0D8F76), cornerRadius = CornerRadius(24f * s))
+        drawRoundRect(fill, cornerRadius = CornerRadius(12f * s))
         val accent = Path().apply {
             moveTo(0f, 88f * s); lineTo(108f * s, 24f * s)
             lineTo(108f * s, 108f * s); lineTo(0f, 108f * s); close()
         }
-        drawPath(accent, Color(0xFF087A65).copy(alpha = .45f))
+        drawPath(accent, secondaryInk.copy(alpha = .12f))
         fun branch(x: Float, y: Float, a: Float, b: Float, color: Color, width: Float) {
             drawLine(color, Offset(x * s, y * s), Offset(a * s, b * s), width * s, StrokeCap.Round)
         }
-        branch(35f, 35f, 35f, 73f, Color.White, 9f)
-        branch(41f, 54f, 66f, 34f, Color.White, 8f)
-        branch(41f, 54f, 66f, 74f, Color(0xFFB4F1DF), 8f)
-        drawCircle(Color.White, 5f * s, Offset(41f * s, 54f * s))
-        drawCircle(Color.White, 6f * s, Offset(69f * s, 32f * s))
-        drawCircle(Color(0xFFB4F1DF), 6f * s, Offset(69f * s, 76f * s))
+        branch(35f, 35f, 35f, 73f, ink, 9f)
+        branch(41f, 54f, 66f, 34f, ink, 8f)
+        branch(41f, 54f, 66f, 74f, secondaryInk, 8f)
+        drawCircle(ink, 5f * s, Offset(41f * s, 54f * s))
+        drawCircle(ink, 6f * s, Offset(69f * s, 32f * s))
+        drawCircle(secondaryInk, 6f * s, Offset(69f * s, 76f * s))
     }
 }
 
