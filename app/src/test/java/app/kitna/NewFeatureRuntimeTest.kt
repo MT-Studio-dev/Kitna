@@ -113,6 +113,7 @@ class NewFeatureRuntimeTest {
         )
         seed(listOf(expense))
         compose.onNodeWithText("Weekend").performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Old train ticket"))
         compose.onNodeWithText("Old train ticket").performClick()
         waitForText("Expense details")
         compose.onNodeWithText("Edit").performClick()

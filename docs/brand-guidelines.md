@@ -11,11 +11,11 @@ The supplied creator artwork is stored as Android drawable resources:
 
 These are user-supplied assets, not newly generated replacements. About displays them using `ContentScale.Fit`, without tinting, cropping, stretching or redrawing the artwork. Preserve their aspect ratio. The wide banner's existing whitespace is part of its supplied composition; keep it visible against both app themes. Give the images meaningful accessibility descriptions rather than using their file names as labels.
 
-## Manga Panels interface
+## Manga Panels interface and revised layout
 
-The selected product style uses cream/ink light surfaces, an appropriate dark counterpart, strong panel edges, warm accents and clear typographic hierarchy. Keep labels, controls, amounts and navigation readable at system text sizes. The creator artwork retains its own original colors/background; do not recolor it to match budget or expense states.
+Version 0.6 retains the existing Manga Panels cream/ink light theme, warm accents, strong panels and corresponding dark theme. Light is the default. The supplied expense-tracker screenshots guide only the placement of options: compact lists, group headers, expandable member balances and grouped settings. They do not replace the app's colors or visual identity. Keep labels, controls, amounts and navigation readable at system text sizes. The creator artwork retains its original colors/background; do not recolor it to match budget or expense states.
 
-Budget risk has a separate labeled green/amber/orange/red scale. Stronger expense tint and amount weight represent magnitude, not payment verification, debt direction or a creator badge. Do not use color alone to convey those meanings.
+Budget risk has a separate labeled green/amber/orange/red scale. Expense amount weight and the large-expense label represent magnitude; labeled balance colors show debt direction. Do not use color alone to convey those meanings.
 
 ## Creator and support destinations
 

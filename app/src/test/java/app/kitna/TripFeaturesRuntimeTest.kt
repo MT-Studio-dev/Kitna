@@ -62,10 +62,12 @@ class TripFeaturesRuntimeTest {
 
     @Test fun groupBudgetPersistsAndTracksExpensesWithoutCountingRepayments() {
         val vm = seed()
+        compose.onNodeWithContentDescription("Group settings").performClick()
         compose.onNodeWithContentDescription("Edit group").performClick()
         compose.onNodeWithText("Trip budget · ₹ (optional)").performScrollTo().performTextInput("2000.00")
         compose.onNodeWithText("Save").performClick()
         waitForEditorToClose()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Remaining: ₹750.00").performScrollTo().assertIsDisplayed()
 
         val extra = Expense("taxi", "goa", "Taxi", 100000,

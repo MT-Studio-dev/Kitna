@@ -364,17 +364,19 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
     val scope = rememberCoroutineScope()
     val personId = rememberSaveable { existing?.id ?: newId() }
     var name by rememberSaveable { mutableStateOf(existing?.name.orEmpty()) }
+    var email by rememberSaveable { mutableStateOf(existing?.email.orEmpty()) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var localBusy by remember { mutableStateOf(false) }
     val sharedBusy by vm.saving.collectAsStateWithLifecycle()
     val busy = localBusy || sharedBusy
     var remove by rememberSaveable { mutableStateOf(false) }
-    EditorScreen(if (existing == null) "Add a friend" else if (existing.id == "self") "Your profile" else "Edit friend", busy, error, dirty = name != existing?.name.orEmpty(), onClose = onClose, onSave = {
-        scope.launch { localBusy = true; error = null; vm.savePerson(Person(id = personId, name = name)).onSuccess { onClose() }.onFailure { error = it.message }; localBusy = false }
+    EditorScreen(if (existing == null) "Add a friend" else if (existing.id == "self") "Your profile" else "Edit friend", busy, error, dirty = name != existing?.name.orEmpty() || email != existing?.email.orEmpty(), onClose = onClose, onSave = {
+        scope.launch { localBusy = true; error = null; vm.savePerson(Person(id = personId, name = name, email = email)).onSuccess { onClose() }.onFailure { error = it.message }; localBusy = false }
     }) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Box(Modifier.size(80.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) { Text(name.take(1).uppercase().ifBlank { "+" }, fontSize = 32.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) } }
         EditField(name, { name = it }, if (existing?.id == "self") "Your name" else "Friend's name")
-        Text("Names help you track who paid and who owes. Adding a name does not send an invitation; shared groups connect friends through their signed-in accounts.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+        if (existing?.id != "self") OutlinedTextField(email, { email = it }, label = { Text("Friend's Google email (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text("Add their Google email to connect them automatically when you share a group. They sign in with that same email to see it. Leave blank to track a local friend or invite them with a group code.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         if (existing != null && existing.id != "self") TextButton(onClick = { remove = true }, enabled = !busy) { Text("Delete friend", color = MaterialTheme.colorScheme.error) }
     }
     if (remove) AlertDialog(onDismissRequest = { remove = false }, title = { Text("Delete ${existing?.name}?") }, text = { Text("Friends referenced by groups or financial history cannot be deleted. Rename them instead to preserve your records.") }, confirmButton = { TextButton(onClick = {
@@ -382,7 +384,7 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
     }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { remove = false }) { Text("Cancel") } })
 }
 
-@Composable fun GroupEditor(book: Book, existing: Group?, vm: KitnaViewModel, onClose: () -> Unit) {
+@Composable fun GroupEditor(book: Book, existing: Group?, vm: KitnaViewModel, onCreated: ((String, Boolean) -> Unit)? = null, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val sharedGroup = existing != null && book.sharedGroups.any { it.groupId == existing.id }
     val originalJson by rememberSaveable { mutableStateOf<String?>(existing?.let { Json.encodeToString(it) }) }
@@ -399,6 +401,9 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
     var pickerIcon by rememberSaveable { mutableStateOf(icon) }
     var pickerColour by rememberSaveable { mutableStateOf(colour) }
     var newFriendName by rememberSaveable { mutableStateOf("") }
+    var newFriendEmail by rememberSaveable { mutableStateOf("") }
+    val cloud by vm.cloud.state.collectAsStateWithLifecycle()
+    var shareOnCreate by rememberSaveable { mutableStateOf(vm.cloud.state.value.session != null) }
     var newFriendId by rememberSaveable { mutableStateOf(newId()) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var localBusy by remember { mutableStateOf(false) }
@@ -406,18 +411,22 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
     val busy = localBusy || sharedBusy
     var confirm by rememberSaveable { mutableStateOf<String?>(null) }
     EditorScreen(if (existing == null) "Create a group" else "Group settings", busy, error, dirty = name != existing?.name.orEmpty() || members.toSet() != (existing?.members?.toSet() ?: setOf("self")) || simplify != (existing?.simplifyDebts ?: true) || kind != (existing?.kind ?: "Group") || icon != (existing?.icon ?: "group") || colour != (existing?.color ?: "teal") || budgetInput != existing?.budget?.let(::amountText).orEmpty() || newFriendName.isNotBlank(), onClose = onClose, onSave = {
-        if (newFriendName.isNotBlank()) error = "Add the new friend to the group, or clear their name before saving."
+        if (newFriendName.isNotBlank() || newFriendEmail.isNotBlank()) error = "Add the new friend to the group, or clear their details before saving."
         else scope.launch {
             localBusy = true; error = null
             runCatching {
                 val budget = budgetInput.takeIf { it.isNotBlank() }?.let { Accounting.money(it) }
                 require(budget == null || budget > 0) { "Enter a positive budget, or leave it blank." }
                 vm.saveGroup(Group(id = groupId, name = name.trim(), members = members.distinct(), archived = existing?.archived ?: false, kind = kind, simplifyDebts = simplify, icon = icon, color = colour, budget = budget), original = originalGroup).getOrThrow()
-            }.onSuccess { onClose() }.onFailure { error = it.message ?: "Could not save group." }
+            }.onSuccess { if (existing == null && onCreated != null) onCreated(groupId, shareOnCreate && cloud.session != null) else onClose() }.onFailure { error = it.message ?: "Could not save group." }
             localBusy = false
         }
     }) {
         EditField(name, { name = it }, "Group name")
+        if (existing == null) EditSection("Connect your crew", "A shared group syncs expenses with friends who sign in using the emails you add. You can also copy a join code from the group page.") {
+            if (cloud.session != null) Row(verticalAlignment = Alignment.CenterVertically) { Text("Share this group online", Modifier.weight(1f)); Switch(shareOnCreate, { shareOnCreate = it }) }
+            else Text("Create your group now. Sign in with Google from the group page to get a join code.", style = MaterialTheme.typography.bodySmall)
+        }
         if (existing?.kind != "Direct") EditChoice("Group type", listOf("Group" to "Other", "Trip" to "Trip", "Home" to "Home", "Couple" to "Couple"), kind, { kind = it })
         if (existing?.kind != "Direct") EditSection("Trip budget", "A total spending limit for the whole group. Leave blank to remove the limit.") {
             EditField(budgetInput, { budgetInput = it }, "Trip budget · ₹ (optional)", money = true)
@@ -438,12 +447,13 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
                 HorizontalDivider()
                 if (book.people.size < 2) Text("Add a friend below to start your group.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 EditField(newFriendName, { newFriendName = it }, "New friend's name")
+                OutlinedTextField(newFriendEmail, { newFriendEmail = it }, label = { Text("Friend's Google email (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedButton(onClick = {
                     scope.launch {
                         localBusy = true; error = null
-                        vm.savePerson(Person(id = newFriendId, name = newFriendName)).onSuccess {
+                        vm.savePerson(Person(id = newFriendId, name = newFriendName, email = newFriendEmail)).onSuccess {
                             members = ArrayList((members + newFriendId).distinct())
-                            newFriendName = ""; newFriendId = newId()
+                            newFriendName = ""; newFriendEmail = ""; newFriendId = newId()
                         }.onFailure { error = it.message }
                         localBusy = false
                     }

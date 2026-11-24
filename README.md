@@ -4,7 +4,17 @@ Kitna is an Android expense tracker created by **MT Studio**. Track local bills 
 
 Amounts are INR, stored as integer paise. Kitna records payments made elsewhere; it does not initiate bank transfers or verify that a recorded payment reached a bank account.
 
-## Version 0.5
+## Version 0.6
+
+- Existing Manga Panels colors and styling, with option placement based on the supplied layout references: compact expense lists, colored group headers, expandable member balances and grouped Account settings. Groups is the opening tab. Light is the default when no appearance preference has been saved; saved appearance choices remain available.
+- Copy a 12-character group code from a newly shared group or its settings. Friends enter it through **Groups → Join group**. Codes expire after seven days and can be revoked.
+- Add an optional Google email to a local friend or invite an existing/new group participant by email. A verified matching Google account gains the group automatically on sync, preserving the participant's existing balances. No email message is sent. Leaving/removal prevents automatic rejoining until explicitly reinvited.
+- Categorized Account settings, visible logout, and group settings with members and leave controls. Owners can leave after another joined account can take ownership.
+- Optional shared-activity notifications under **Account → Settings → Notifications**. Foreground alerts follow synchronization; Android schedules background checks roughly every 15 minutes or later. These are periodic checks, not instant push delivery. First sync and your own edits stay silent.
+
+The v0.6 verification passed **129 tests (52 core + 77 app)** and **31 separate PostgreSQL tests**. The hosted project reports protocol version 2 after the invitation migration. Real-device Google sign-in, two-phone synchronization, notification permission/delivery and accessibility checks remain necessary. See [the v0.6 notes](docs/releases/v0.6.0.md).
+
+## Version 0.5 (previous release)
 
 - **Manga Panels:** cream-and-ink light mode, a corresponding dark theme, warm accents, comic panels and clear amount hierarchy. Budget status moves through green, amber, orange and red with text labels. Large expenses use stronger tint and bold amounts; smaller expenses keep readable text on softer surfaces.
 - **First-run guidance:** profile setup, an introduction to local/shared records, and a path to Google sign-in. The walkthrough can be reopened from Help.
@@ -22,8 +32,8 @@ The completed v0.5 run in `verify-v05-complete.log` passed **117 tests: 50 core 
 2. Add local friends and create a group. People named in a local book do not need accounts.
 3. Add an expense, choose payer contributions and the split, then review the allocations before saving. Duplicate an existing bill when its description/allocations can be reused.
 4. Review balances and record repayments already made. Attach receipt images, set a trip budget and share a plain-text trip summary as needed.
-5. To collaborate, open **Shared groups & Google sign-in**, sign in, share the selected local group and create invitations. An invitation can connect a friend's account to an existing named participant; a new-member invitation adds another slot.
-6. A friend signs in on their phone and accepts the invitation. The group owner manages invitations and removals. A non-owner can leave while historical financial references remain.
+5. To collaborate, sign in with Google and create/share a group. Add friends' Google emails to connect them to the existing participant slots automatically. A group code lets other friends join a new slot without copying a full link.
+6. A friend signs in with the matching email and syncs, or enters the code through **Groups → Join group**. The owner manages invitations and removals. Members can leave while historical financial references remain; ownership transfers when an owner leaves.
 7. Review Pending/Failed/Conflict messages before assuming a draft reached other phones. Use **Sync now** to request an update; shared network operations require internet.
 8. Save complete ZIP backups regularly. Sign out before restoring a backup or erasing this device's book. Restoring creates local records and never replays cloud commands into a live group.
 

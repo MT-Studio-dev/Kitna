@@ -1,13 +1,13 @@
-# Shared groups: v0.5 implementation and remaining checks
+# Shared groups: implementation and remaining checks
 
-The selected UI is **Manga Panels** and authentication uses **Google sign-in**. Native client and backend code are implemented. The user's Supabase migration is deployed and its hosted preflight passes. The completed v0.5 Gradle run passed **117 tests (50 core + 67 app)**, assembly and lint with **0 errors/26 warnings**. Actual two-account/two-phone behavior remains unverified.
+Version 0.6 retains the Manga Panels theme, uses the supplied references for option placement, defaults to Light and uses Google sign-in. Both Supabase migrations are deployed and the protocol-2 hosted preflight passes. Verification passed 129 core/app tests and 31 database tests. Short group codes and verified Google email invitations supplement compatible old invitation tokens. Optional activity notifications share the same process book/auth/sync coordinator across foreground and scheduled jobs, avoiding independent caches overwriting each other. Actual two-account/two-phone behavior and background notification delivery remain unverified.
 
 ## User flow
 
 1. Keep an existing group local, or sign in and explicitly share that selected group.
-2. The owner sends an invitation for an existing named participant, or an invitation for a new member.
-3. A friend signs in and accepts; the server binds their account to the intended ledger participant. Names are not used to prove identity.
-4. Members record expenses/repayments/comments and see group balances, budgets, receipts and history. The owner manages invitations, settings and removals. A non-owner can leave while their historical financial references remain.
+2. The owner adds a friend's Google email to an existing participant or creates a new email invitation. A reusable seven-day code is available for additional members.
+3. The friend signs in with the verified matching email and the group appears during sync, or enters the group code. Names are not used to prove identity. General codes create a new participant slot; use email invitations to connect existing balances.
+4. Members record expenses/repayments/comments and see balances, budgets, receipts and history. Members can leave; an owner must have another joined member to take ownership. Leaving/removal revokes automatic email reattachment until the owner explicitly reinvites that participant.
 5. Offline drafts stay pending on their device until accepted by the server. Conflict/failure messages remain visible; a local save is not evidence that another phone has received the change.
 
 ## Identity and persistence

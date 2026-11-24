@@ -9,6 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.kitna.KitnaViewModel
@@ -37,6 +39,8 @@ internal fun sharedInviteToken(input: String): String {
     val value = input.trim()
     val link = Regex("app\\.kitna://join\\?[^\\s]+", RegexOption.IGNORE_CASE).find(value)?.value
     val token = if (link != null) Uri.parse(link).getQueryParameter("token").orEmpty() else value
+    val compact = token.replace(Regex("[-\\s]"), "").uppercase(java.util.Locale.ROOT)
+    if (compact.matches(Regex("[2-9A-HJ-NP-Z]{12}"))) return compact
     require(token.matches(Regex("[A-Za-z0-9_-]{20,512}"))) { "Paste a valid Kitna invitation link or code." }
     return token
 }
@@ -54,6 +58,11 @@ internal fun sharedInviteToken(input: String): String {
     var invitation by rememberSaveable { mutableStateOf<String?>(null) }
     var invitationGroup by rememberSaveable { mutableStateOf("") }
     var invitationPerson by rememberSaveable { mutableStateOf<String?>(null) }
+    var emailGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var emailPersonId by rememberSaveable { mutableStateOf<String?>(null) }
+    var emailName by rememberSaveable { mutableStateOf("") }
+    var emailAddress by rememberSaveable { mutableStateOf("") }
+    var emailError by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     var removingGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var removingPersonId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -77,13 +86,18 @@ internal fun sharedInviteToken(input: String): String {
         }
     }
     fun invite(groupId: String, personId: String?) {
+        emailGroupId = groupId; emailPersonId = personId
+        emailName = personId?.let(book::personName).orEmpty()
+        emailAddress = book.people.find { it.id == personId }?.email.orEmpty(); emailError = null
+    }
+    fun showCode(groupId: String) {
         if (localBusy || state.busy) return
         localBusy = true; error = null; notice = null
         scope.launch {
             try {
-                vm.cloud.invite(groupId, personId).onSuccess {
-                    invitation = it; invitationGroup = book.groupName(groupId)
-                    invitationPerson = personId?.let(book::personName)
+                vm.cloud.groupCode(groupId).onSuccess {
+                    invitation = it.first; invitationGroup = book.groupName(groupId)
+                    invitationPerson = null
                 }.onFailure { error = it.message ?: "Could not create this invitation." }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { error = failure.message ?: "Could not create this invitation." }
@@ -142,8 +156,8 @@ internal fun sharedInviteToken(input: String): String {
                 item {
                     MangaPanel {
                         Text("Join a friend's group", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
-                        Text("Paste the invitation they shared with you. You will join using the Google account shown above.", style = MaterialTheme.typography.bodySmall)
-                        OutlinedTextField(value = joinInput, onValueChange = { joinInput = it; error = null }, label = { Text("Invitation link or code") }, modifier = Modifier.fillMaxWidth(), enabled = !busy, maxLines = 4)
+                        Text("Enter your friend's 12-character group code. Groups invited to your Google email appear automatically after syncing.", style = MaterialTheme.typography.bodySmall)
+                        OutlinedTextField(value = joinInput, onValueChange = { joinInput = it; error = null }, label = { Text("Group code") }, placeholder = { Text("ABCD-EFGH-2345") }, modifier = Modifier.fillMaxWidth(), enabled = !busy, singleLine = true)
                         Button(onClick = {
                             run({
                                 val token = try { sharedInviteToken(joinInput) } catch (failure: IllegalArgumentException) { return@run Result.failure(failure) }
@@ -223,16 +237,18 @@ internal fun sharedInviteToken(input: String): String {
                                     }
                                 }
                                 if (owner) {
-                                    OutlinedButton(onClick = { invite(group.id, null) }, enabled = !busy && state.ready == true && !group.archived, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Invite a new member") }
+                                    OutlinedButton(onClick = { showCode(group.id) }, enabled = !busy && state.invitationsReady && !group.archived, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Show group code") }
+                                    OutlinedButton(onClick = { invite(group.id, null) }, enabled = !busy && state.invitationsReady && !group.archived, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add friend by email") }
                                     TextButton(onClick = { revokingGroupId = group.id }, enabled = !busy && state.ready == true, modifier = Modifier.heightIn(min = 48.dp)) { Text("Revoke pending invitations") }
                                 } else {
                                     Text("The group owner manages invitations.", style = MaterialTheme.typography.bodySmall)
+                                }
                                     val ownParticipant = snapshot?.participants?.firstOrNull { it.id == link.myParticipantId }
                                     if (ownParticipant?.active == true && ownParticipant.userId == session.id) {
+                                        if (owner) Text("When you leave, ownership passes to another joined friend. At least one other friend must have joined first.", style = MaterialTheme.typography.bodySmall)
                                         if (pending.isNotEmpty()) Text("Sync or discard your pending changes before leaving.", style = MaterialTheme.typography.bodySmall)
                                         OutlinedButton(onClick = { leavingGroupId = group.id }, enabled = !busy && state.ready == true && pending.isEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Leave group") }
                                     }
-                                }
                             }
                         }
                     }
@@ -245,7 +261,7 @@ internal fun sharedInviteToken(input: String): String {
     shareGroupId?.let { selectedId ->
         val group = book.groups.firstOrNull { it.id == selectedId }
         AlertDialog(onDismissRequest = { shareGroupId = null }, title = { Text("Share ${group?.name ?: "this group"}?") }, text = { Text("This group's people, expenses, balances, budget, repayments, comments, history and receipt photos will be stored in your Supabase project and visible to accepted members. Other local groups stay separate.") },
-            confirmButton = { TextButton(onClick = { shareGroupId = null; run({ vm.cloud.shareGroup(selectedId) }, "Group shared. Create an invitation for each friend.") }, enabled = !busy) { Text("Share group") } }, dismissButton = { TextButton(onClick = { shareGroupId = null }) { Text("Cancel") } })
+            confirmButton = { TextButton(onClick = { shareGroupId = null; run({ vm.cloud.shareGroup(selectedId) }, "Group shared. Copy its code or add friends by email.") }, enabled = !busy) { Text("Share group") } }, dismissButton = { TextButton(onClick = { shareGroupId = null }) { Text("Cancel") } })
     }
     discardGroupId?.let { selectedId ->
         AlertDialog(onDismissRequest = { discardGroupId = null }, title = { Text("Discard unsent changes?") }, text = { Text("Your unsent changes in ${book.groupName(selectedId)} will be removed and replaced with the last saved shared records. Other members' saved changes stay in the group. Keep any notes you need before continuing.") },
@@ -267,21 +283,29 @@ internal fun sharedInviteToken(input: String): String {
             confirmButton = { TextButton(onClick = { revokingGroupId = null; run({ vm.cloud.revokeInvites(selectedId) }, "Pending invitations revoked") }, enabled = !busy) { Text("Revoke invitations") } }, dismissButton = { TextButton(onClick = { revokingGroupId = null }) { Text("Cancel") } })
     }
     invitation?.let { token ->
-        val link = Uri.Builder().scheme("app.kitna").authority("join").appendQueryParameter("token", token).build().toString()
         AlertDialog(onDismissRequest = { invitation = null }, title = { Text("Invite to $invitationGroup") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(invitationPerson?.let { "This invitation connects an account to $it's existing shares. Send it only to $it." } ?: "Share this invitation with the friend you want to add to the group.")
-                OutlinedTextField(value = link, onValueChange = {}, readOnly = true, label = { Text("Invitation link") }, maxLines = 4)
+                OutlinedTextField(value = token, onValueChange = {}, readOnly = true, label = { Text("Group code") }, singleLine = true)
                 OutlinedButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Kitna invitation", link)); notice = "Invitation copied"
-                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Copy invitation") }
-                Button(onClick = {
-                    val text = "Join $invitationGroup on Kitna.\n$link\nOpen Kitna → Shared groups → Join group, then paste this invitation."
-                    runCatching { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }, "Share Kitna invitation")) }
-                        .onFailure { error = "No sharing app could open. Copy the invitation instead." }
-                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Share invitation") }
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Kitna group code", token)); notice = "Group code copied"
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Copy code") }
+                Text("In Kitna, open Groups → Join group and enter this code. Anyone with it can join until it expires or is revoked.", style = MaterialTheme.typography.bodySmall)
             }
         }, confirmButton = { TextButton(onClick = { invitation = null }) { Text("Done") } })
+    }
+    emailGroupId?.let { selectedId ->
+        AlertDialog(onDismissRequest = { if (!localBusy) emailGroupId = null }, title = { Text("Add friend by email") }, text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("They will see ${book.groupName(selectedId)} when they sign in with this Google email. No email message is sent.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(emailName, { emailName = it }, label = { Text("Friend's name") }, singleLine = true, enabled = emailPersonId == null && !localBusy)
+                OutlinedTextField(emailAddress, { emailAddress = it; emailError = null }, label = { Text("Google email") }, singleLine = true, enabled = !localBusy, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
+                emailError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        }, confirmButton = { TextButton(onClick = {
+            localBusy = true; emailError = null
+            scope.launch { try { vm.cloud.inviteEmail(selectedId, emailPersonId, emailName, emailAddress).onSuccess { emailGroupId = null; notice = "Email invitation saved. Your friend can sign in and sync." }.onFailure { emailError = it.message } } finally { localBusy = false } }
+        }, enabled = !busy && emailName.isNotBlank() && emailAddress.isNotBlank()) { Text("Add friend") } }, dismissButton = { TextButton({ emailGroupId = null }, enabled = !localBusy) { Text("Cancel") } })
     }
 }

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import app.kitna.core.*
 import app.kitna.data.LocalStore
 import app.kitna.data.CloudCoordinator
+import app.kitna.data.KitnaRuntime
 import android.net.Uri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,8 +18,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class KitnaViewModel(application: Application) : AndroidViewModel(application) {
-    val store = LocalStore(application)
-    val cloud = CloudCoordinator(application, store, viewModelScope)
+    private val runtime = KitnaRuntime.get(application)
+    val store = runtime.store
+    val cloud = runtime.cloud
     val book = store.book
     val error = MutableStateFlow<String?>(null)
     private val mutableSaving = MutableStateFlow(false)
@@ -28,7 +30,7 @@ class KitnaViewModel(application: Application) : AndroidViewModel(application) {
     private val commandMutex = Mutex()
     init { retryLoad() }
     fun retryLoad() { viewModelScope.launch {
-        try { store.load(); error.value = null; cloud.initialize() }
+        try { runtime.load(); error.value = null }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error.value = "Could not load your records. Your stored data has been kept. ${failure.message.orEmpty()}" }
     } }
@@ -89,5 +91,5 @@ class KitnaViewModel(application: Application) : AndroidViewModel(application) {
         finally { mutableFileTransferBusy.value = false }
     }
     fun receiveCloudIntent(uri: Uri) { viewModelScope.launch { book.filterNotNull().first(); cloud.receive(uri) } }
-    override fun onCleared() { store.close(); super.onCleared() }
+    // The process runtime also serves Android's scheduled sync jobs.
 }

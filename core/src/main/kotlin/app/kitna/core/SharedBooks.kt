@@ -84,7 +84,9 @@ object SharedBooks {
         val payload = buildJsonObject {
             put("p_group", groupPayload(group, link))
             put("p_participants", JsonArray(group.members.map { id -> buildJsonObject {
-                put("id", people.getValue(id)); put("name", book.people.first { it.id == id }.name); put("isSelf", id == "self")
+                val person = book.people.first { it.id == id }
+                put("id", people.getValue(id)); put("name", person.name); put("isSelf", id == "self")
+                if (id != "self" && person.email.isNotBlank()) put("email", EmailAddress.normalize(person.email))
             } }))
             put("p_records", JsonArray(records))
         }
@@ -156,8 +158,8 @@ object SharedBooks {
             peopleMap[localId] = participant.id
             participant.userId?.let { userIds[localId] = it }
             if (localId != "self") {
-                val person = Person(localId, participant.name)
                 val at = people.indexOfFirst { it.id == localId }
+                val person = Person(localId, participant.name, people.getOrNull(at)?.email.orEmpty())
                 if (at < 0) people += person else people[at] = person
             }
         }

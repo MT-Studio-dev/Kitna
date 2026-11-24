@@ -2,6 +2,6 @@
   "name": "kitna-supabase-verification",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node verify.mjs" },
+  "scripts": { "test": "node --test verify.mjs invitations.mjs" },
   "devDependencies": { "@electric-sql/pglite": "0.6.0" }
 }

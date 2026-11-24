@@ -15,7 +15,8 @@ import java.io.FileOutputStream
 
 data class CloudUiState(
     val session: CloudSession? = null, val busy: Boolean = false, val ready: Boolean? = null,
-    val message: String? = null, val lastSync: Long? = null, val pendingInvite: String? = null
+    val message: String? = null, val lastSync: Long? = null, val pendingInvite: String? = null,
+    val invitationsReady: Boolean = false, val openGroupId: String? = null
 )
 
 internal data class CloudServices(val http: CloudHttp, val auth: CloudAuth) {
@@ -27,17 +28,19 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     private val http = services.http
     private val auth = services.auth
     private val receipts = ReceiptStore(app)
+    private val notifications = ActivityNotifications(app)
     private val mutable = MutableStateFlow(CloudUiState())
     val state = mutable.asStateFlow()
     private val syncMutex = Mutex()
     private var poll: Job? = null
-    private var foreground = true
+    private var foreground = false
     private val json = SharedBooks.json
 
     suspend fun initialize() {
         try {
             val session = auth.load()
             mutable.value = mutable.value.copy(session = session)
+            notifications.setActiveAccount(session?.id)
             if (session != null) {
                 store.update { current -> current.sharedGroups.filter { it.accountId != session.id }.map { it.accountId }.distinct()
                     .fold(current) { book, account -> SharedBooks.withoutSharedCache(book, account) } }
@@ -49,8 +52,10 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     suspend fun beginSignIn(): Result<String> = perform { auth.begin() }
     fun receive(uri: Uri) {
         if (uri.scheme != "app.kitna") return
-        if (uri.host == "join") {
-            val token = uri.getQueryParameter("token")?.takeIf { it.length in 20..300 }
+        if (uri.host == "group") {
+            mutable.value = mutable.value.copy(openGroupId = uri.getQueryParameter("id")?.takeIf { it.length in 1..200 })
+        } else if (uri.host == "join") {
+            val token = uri.getQueryParameter("token")?.takeIf { it.length in 12..300 }
             mutable.value = mutable.value.copy(pendingInvite = token, message = if (token == null) "This group invitation is invalid." else "Review and accept the group invitation in Shared groups.")
         } else if (uri.host == "auth" && uri.path == "/callback") scope.launch {
             perform {
@@ -62,11 +67,13 @@ class CloudCoordinator internal constructor(context: Context, private val store:
                 auth.accept(fresh)
                 if (store.book.value?.people?.firstOrNull { it.id == "self" }?.name == "You") store.update { book -> book.copy(people = book.people.map { if (it.id == "self") it.copy(name = fresh.user.name) else it }) }
                 mutable.value = mutable.value.copy(session = fresh.user)
+                notifications.setActiveAccount(fresh.user.id)
                 startPolling()
                 syncWork()
             }
         }
     }
+    fun clearGroupNavigation() { mutable.value = mutable.value.copy(openGroupId = null) }
     fun setForeground(value: Boolean) { foreground = value; if (value) startPolling() else { poll?.cancel(); poll = null } }
     private fun startPolling() {
         if (!foreground || mutable.value.session == null || poll?.isActive == true) return
@@ -83,7 +90,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     suspend fun sync(): Result<Unit> = perform {
         val status = http.json("POST", "/rest/v1/rpc/kitna_status", body = buildJsonObject {}).jsonObject
         check(status["ready"]?.jsonPrimitive?.booleanOrNull == true) { "Shared-group database setup is incomplete." }
-        mutable.value = mutable.value.copy(ready = true)
+        mutable.value = mutable.value.copy(ready = true, invitationsReady = (status["schemaVersion"]?.jsonPrimitive?.intOrNull ?: 1) >= 2)
         if (mutable.value.session != null) syncWork()
     }
     private suspend fun rpc(name: String, body: JsonObject): JsonElement {
@@ -96,6 +103,8 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     }
     suspend fun shareGroup(groupId: String): Result<Unit> = perform {
         val account = checkNotNull(mutable.value.session) { "Sign in with Google first." }
+        val current = checkNotNull(store.book.value)
+        require(current.groups.find { it.id == groupId }?.members.orEmpty().none { id -> id != "self" && current.people.find { it.id == id }?.email?.isNotBlank() == true } || mutable.value.invitationsReady) { "Apply the v0.6 invitation database update before sharing a group with email invitations. Your local group is saved." }
         store.update { book ->
             saveBeforeSharing(book, groupId)
             SharedBooks.prepareShare(book, groupId, account.id)
@@ -114,13 +123,33 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     }
     suspend fun join(token: String): Result<Unit> = perform {
         checkNotNull(mutable.value.session) { "Sign in with Google before accepting the invitation." }
-        require(token.length in 20..300) { "Paste a complete Kitna invite code." }
-        val result = rpc("kitna_accept_invite", buildJsonObject { put("p_token", token) })
+        require(token.length in 12..300) { "Enter a complete Kitna group code." }
+        val result = rpc("kitna_accept_invite", buildJsonObject { put("p_token", token) }).jsonObject
+        require(result["error"] == null) { result["message"]?.jsonPrimitive?.contentOrNull ?: "This group code is invalid or expired." }
         val snapshot = json.decodeFromJsonElement<SharedSnapshot>(result)
         apply(snapshot)
         mutable.value = mutable.value.copy(pendingInvite = null)
         downloadPhotos(snapshot)
         syncWork()
+    }
+    suspend fun groupCode(groupId: String): Result<Pair<String, String>> = perform {
+        require(mutable.value.invitationsReady) { "Group codes need the v0.6 database update. Ask the project owner to run the invitation migration, then sync again." }
+        val link = memberLink(groupId)
+        require(store.book.value?.pendingChanges?.none { it.groupId == groupId } == true) { "Sync this group before creating its code." }
+        val result = rpc("kitna_group_code", buildJsonObject { put("p_group_id", link.remoteId) }).jsonObject
+        result.getValue("code").jsonPrimitive.content to result.getValue("expiresAt").jsonPrimitive.content
+    }
+    suspend fun inviteEmail(groupId: String, localPersonId: String?, name: String, email: String): Result<Unit> = perform {
+        require(mutable.value.invitationsReady) { "Email invitations need the v0.6 database update. Sync again after applying it." }
+        val cleanEmail = EmailAddress.normalize(email)
+        require(cleanEmail.isNotBlank()) { "Enter your friend's Google email." }
+        val link = memberLink(groupId)
+        require(store.book.value?.pendingChanges?.none { it.groupId == groupId } == true) { "Sync or discard pending changes before inviting a friend." }
+        val snapshot = rpc("kitna_invite_email", buildJsonObject {
+            put("p_group_id", link.remoteId); put("p_participant_id", localPersonId?.let { JsonPrimitive(link.people.getValue(it)) } ?: JsonNull)
+            put("p_name", name.trim()); put("p_email", cleanEmail)
+        })
+        apply(json.decodeFromJsonElement(snapshot))
     }
     suspend fun discardPending(groupId: String): Result<Unit> = perform {
         store.update { book ->
@@ -138,6 +167,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
         poll?.cancel(); poll = null
         store.update { SharedBooks.withoutSharedCache(it) }
         auth.clear()
+        notifications.setActiveAccount(null)
         mutable.value = mutable.value.copy(session = null, message = "Signed out. Local groups have been kept.", lastSync = null)
     }
     suspend fun removeMember(groupId: String, localPersonId: String): Result<Unit> = perform {
@@ -153,6 +183,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
         val link = memberLink(groupId)
         require(store.book.value?.pendingChanges?.none { it.groupId == groupId } == true) { "Sync or discard this group's pending changes before leaving." }
         rpc("kitna_leave_group", buildJsonObject { put("p_group_id", link.remoteId) })
+        notifications.cancelGroup(link.accountId, groupId)
         store.update { book ->
             val others = book.sharedGroups.filterNot { it.groupId == groupId }
             // Reuse the account-cache removal logic with only this link selected.
@@ -208,6 +239,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
         val snapshots = update.getValue("groups").jsonArray.map { json.decodeFromJsonElement<SharedSnapshot>(it) }
         snapshots.forEach { snapshot -> apply(snapshot); downloadPhotos(snapshot) }
         val active = update.getValue("memberGroupIds").jsonArray.map { it.jsonPrimitive.content }.toSet()
+        store.book.value?.sharedGroups.orEmpty().filter { it.accountId == account.id && it.remoteId !in active }.forEach { notifications.cancelGroup(account.id, it.groupId) }
         store.update { book -> book.copy(sharedGroups = book.sharedGroups.map {
             if (it.accountId == account.id && it.snapshot != null) it.copy(revoked = it.remoteId !in active) else it
         }) }
@@ -223,6 +255,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
         // and the retryable command, including when the server already committed.
         downloadPhotos(snapshot)
         store.update { SharedBooks.applySnapshot(it, snapshot, id, acknowledged) }
+        store.book.value?.sharedGroups?.find { it.accountId == id && it.remoteId == snapshot.group.id }?.let { notifications.onAcceptedSnapshot(id, it.groupId, snapshot) }
     }
     private fun photos(book: Book, groupId: String) = BookBackup.referencedPhotos(book.copy(
         expenses = book.expenses.filter { it.groupId == groupId }, revisions = book.revisions.filter { it.expense.groupId == groupId }))

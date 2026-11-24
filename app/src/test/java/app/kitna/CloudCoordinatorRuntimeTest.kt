@@ -119,6 +119,22 @@ class CloudCoordinatorRuntimeTest {
     private suspend fun loadBook(expected: Book): LocalStore = LocalStore(context).also { it.load(); it.replace(expected) }
     private fun calls(network: Network, name: String) = network.calls.filter { it.url.path == "/rest/v1/rpc/$name" }
 
+    @Test fun shortCodeUsesTheAuthenticatedOwnerRpcAfterProtocolTwoSync() = runBlocking {
+        val fixture = fixture()
+        val accepted = SharedBooks.applySnapshot(fixture.queued.copy(pendingChanges = emptyList()), fixture.initial, owner)
+        val network = Network(Reply("/rest/v1/rpc/kitna_status", body = """{"ready":true,"schemaVersion":2}"""), Reply("/rest/v1/rpc/kitna_sync", body = syncResponse(fixture.initial, false)), Reply("/rest/v1/rpc/kitna_group_code", body = """{"code":"ABCD-EFGH-2345","expiresAt":"2026-12-01T00:00:00Z"}"""))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val store = loadBook(accepted)
+        try { val cloud = coordinator(store,scope,network);cloud.sync().getOrThrow();assertTrue(cloud.state.value.invitationsReady);assertEquals("ABCD-EFGH-2345",cloud.groupCode(accepted.groups.single().id).getOrThrow().first);assertEquals("Bearer user-access",network.calls.last().headers["Authorization"]);assertEquals(fixture.initial.group.id,json.parseToJsonElement(network.calls.last().sent.toString("UTF-8")).jsonObject["p_group_id"]?.jsonPrimitive?.content) }
+        finally { scope.cancel();store.close() }
+    }
+    @Test fun invalidCodeJsonResponseKeepsTheBookAndShowsTheServerExplanation() = runBlocking {
+        val network = Network(Reply("/rest/v1/rpc/kitna_accept_invite",body="""{"error":"rate_limited","message":"Too many code attempts. Try again in 15 minutes."}"""))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val store = loadBook(Book())
+        try { val cloud=coordinator(store,scope,network);val result=cloud.join("ABCD-EFGH-2345");assertTrue(result.isFailure);assertTrue(result.exceptionOrNull()!!.message!!.contains("15 minutes"));assertEquals(Book(),store.book.value) }
+        finally {scope.cancel();store.close()}
+    }
     @Test fun firstConflictStopsLaterQueuedEditsWhileRefreshingTheServerSnapshotAndKeepingTheDraft() = runBlocking {
         val fixture = fixture()
         val saved = serverSaved(fixture.initial, "Another member's saved note")

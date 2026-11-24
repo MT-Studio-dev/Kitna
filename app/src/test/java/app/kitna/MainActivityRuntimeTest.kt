@@ -153,6 +153,7 @@ class MainActivityRuntimeTest {
         }
         compose.onNodeWithText("Save").performClick()
         waitForEditorToClose()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Shared dinner"))
         waitForText("Shared dinner")
         val stored = LocalStore(compose.activity)
         try {

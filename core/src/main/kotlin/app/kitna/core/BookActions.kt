@@ -11,10 +11,15 @@ object BookActions {
     }
     fun savePerson(book: Book, person: Person): Book {
         val label = name(person.name)
+        val email = EmailAddress.normalize(person.email)
         val old = book.people.firstOrNull { it.id == person.id }
-        if (old != null) return if (old.name == label) book else renamePerson(book, person.id, label)
+        require(email.isEmpty() || book.people.none { it.id != person.id && it.email.equals(email, true) }) { "This email already belongs to another friend." }
+        if (old != null) {
+            val renamed = if (old.name == label) book else renamePerson(book, person.id, label)
+            return renamed.copy(people = renamed.people.map { if (it.id == person.id) it.copy(email = email) else it })
+        }
         require(book.people.none { it.name.equals(label, true) }) { "A person with this name already exists." }
-        return event(book.copy(people = book.people + person.copy(name = label)), message = "Added $label")
+        return event(book.copy(people = book.people + person.copy(name = label, email = email)), message = "Added $label")
     }
     fun renamePerson(book: Book, id: String, value: String): Book {
         val old = book.people.firstOrNull { it.id == id } ?: throw IllegalArgumentException("Person no longer exists.")

@@ -5,7 +5,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 fun newId(): String = UUID.randomUUID().toString()
-@Serializable data class Person(val id: String = newId(), val name: String)
+@Serializable data class Person(val id: String = newId(), val name: String, val email: String = "")
 @Serializable data class Group(
     val id: String = newId(), val name: String, val members: List<String>,
     val archived: Boolean = false, val kind: String = "Group", val simplifyDebts: Boolean = true,

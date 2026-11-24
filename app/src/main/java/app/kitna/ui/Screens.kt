@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +24,9 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kitna.core.*
@@ -37,63 +41,52 @@ internal data class ExpenseFilter(val category:String="All categories",val perso
 }
 @Composable internal fun OverallSummary(balances:Map<String,Long>) {
     val owed=balances.values.filter{it>0}.sum();val owe=-balances.values.filter{it<0}.sum()
-    Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=16.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
-        MangaChapter("YOUR EVERYDAY ADVENTURES", "GOOD TRIPS. FAIR SPLITS.")
-        MangaPanel {
-            Text(if(owed==0L&&owe==0L)"Your overall balance is ${money(0)}" else if(owed==owe)"Your net balance is ${money(0)}" else if(owed>owe)"Overall, you are owed ${money(owed-owe)}" else "Overall, you owe ${money(owe-owed)}",style=MaterialTheme.typography.titleMedium,color=if(owed==owe)MaterialTheme.colorScheme.onSurface else if(owed>owe)Owed else Owe,fontWeight=FontWeight.Bold)
-            FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-                Column{Text("You owe",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);Text(money(owe),style=MaterialTheme.typography.titleLarge,color=Owe)}
-                Column{Text("You are owed",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);Text(money(owed),style=MaterialTheme.typography.titleLarge,color=Owed)}
-            }
-        }
+    Column(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=22.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        Text(buildAnnotatedString {
+            append(if(owed==0L&&owe==0L) "You're all settled up" else if(owed>=owe) "Overall, you are owed " else "Overall, you owe ")
+            if(owed!=0L||owe!=0L) withStyle(SpanStyle(color=if(owed>=owe)Owed else Owe,fontWeight=FontWeight.SemiBold)){append(money(kotlin.math.abs(owed-owe)))}
+        },style=MaterialTheme.typography.titleMedium)
+        if(owe>0&&owed>0)Text("You owe ${money(owe)} \u00b7 You're owed ${money(owed)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
-@Composable internal fun DetailSummary(description:String,net:Long,onSettle:()->Unit,onBalances:()->Unit,archived:Boolean,hasDebts:Boolean=false,appearance:Group?=null){
-    Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){
-        if(appearance!=null) MangaChapter("THE ${appearance.kind.uppercase()} ARC", "EVERY BILL. EVERYONE IN.")
-        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)){if(appearance!=null)GroupAvatar(appearance,52);Text(description,Modifier.weight(1f),color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)}
-        Text(if(net==0L&&hasDebts)"Net ${money(0)} · repayments remain" else if(net==0L)"You're all settled up" else if(net>0)"You are owed ${money(net)}" else "You owe ${money(-net)}",color=if(net==0L)MaterialTheme.colorScheme.onSurface else if(net>0)Owed else Owe,style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.ExtraBold)
-        FlowRow(horizontalArrangement=Arrangement.spacedBy(10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-            Button(onSettle,enabled=!archived,modifier=Modifier.heightIn(min=48.dp)){Text("Settle up")}
-            OutlinedButton(onBalances,Modifier.heightIn(min=48.dp),border=BorderStroke(1.5.dp,MaterialTheme.colorScheme.onSurface)){Text("Balances")}
+@Composable internal fun DetailSummary(description:String,net:Long,onSettle:()->Unit,onBalances:()->Unit,archived:Boolean,hasDebts:Boolean=false,appearance:Group?=null,onSummary:(()->Unit)?=null,onBudget:(()->Unit)?=null,onMembers:(()->Unit)?=null){
+    Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        if(appearance!=null)GroupHeader(appearance,description)
+        else Text(description,Modifier.padding(horizontal=20.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if(net==0L&&hasDebts) "Net ${money(0)} \u00b7 repayments remain" else if(net==0L) "You're all settled up" else if(net>0) "You are owed ${money(net)}" else "You owe ${money(-net)}",modifier=Modifier.padding(horizontal=20.dp),color=if(net==0L)MaterialTheme.colorScheme.onSurface else if(net>0)Owed else Owe,style=MaterialTheme.typography.titleMedium)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            OutlinedButton(onSettle,enabled=!archived,modifier=Modifier.heightIn(min=48.dp)){Text("Settle up")}
+            OutlinedButton(onBalances,Modifier.heightIn(min=48.dp)){Text("Balances")}
+            if(onSummary!=null)OutlinedButton(onSummary,Modifier.heightIn(min=48.dp)){Text("Trip summary")}
+            if(onBudget!=null)OutlinedButton(onBudget,Modifier.heightIn(min=48.dp)){Text("Budget")}
+            if(onMembers!=null)OutlinedButton(onMembers,Modifier.heightIn(min=48.dp)){Text("Invite friends")}
         }
-        if(archived)Text("Archived group · restore it in group settings to make changes.",style=MaterialTheme.typography.bodySmall)
+        if(archived)Text("Archived group \u00b7 restore it in group settings to make changes.",Modifier.padding(horizontal=20.dp),style=MaterialTheme.typography.bodySmall)
     }
 }
 @Composable internal fun FilterBar(count:Int,active:Boolean,onFilter:()->Unit){Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){Text("$count expenses",Modifier.weight(1f),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);TextButton(onFilter){Glyph("filter",color=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(6.dp));Text(if(active)"Filters applied" else "Filters")}}}
-@Composable internal fun SectionLabel(title:String){Text(title,Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal=20.dp,vertical=12.dp).semantics{heading()},style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurface)}
+@Composable internal fun SectionLabel(title:String){Text(title,Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=16.dp).semantics{heading()},style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurface)}
 internal fun LazyListScope.expenseRows(book:Book,expenses:List<Expense>,onClick:(Expense)->Unit,showGroup:Boolean=false){
-    val groupSettings=book.groups.associateBy{it.id}
-    val largestByGroup=book.expenses.filterNot{it.deleted}.groupBy{it.groupId}.mapValues{(_,rows)->rows.maxOfOrNull{it.amount}?:0L}
+    val settings=book.groups.associateBy{it.id}
+    val largest=book.expenses.filterNot{it.deleted}.groupBy{it.groupId}.mapValues{(_,rows)->rows.maxOfOrNull{it.amount}?:0L}
     if(expenses.isEmpty())item{EmptyState("No expenses yet","Record a shared expense, or adjust your search and filters.")}
     expenses.groupBy{it.date.take(7)}.forEach{(month,rows)->
         item(key="month:$month"){SectionLabel(runCatching{LocalDate.parse("$month-01").format(DateTimeFormatter.ofPattern("MMMM yyyy"))}.getOrDefault(month))}
         items(rows,key={"expense:${it.id}"}){e->
-            val paid=e.payers["self"]?:0;val share=e.shares["self"]?:0;val net=paid-share
-            val group=groupSettings[e.groupId]
-            val largest=largestByGroup[e.groupId]?:0L
-            val emphasis=expenseEmphasis(e.amount,group?.budget,largest)
-            val dark=MaterialTheme.colorScheme.surface.luminance()<.3f
-            val fill=when(emphasis){ExpenseEmphasis.Large->MaterialTheme.colorScheme.primaryContainer;ExpenseEmphasis.Medium->MaterialTheme.colorScheme.secondaryContainer;ExpenseEmphasis.Small->MaterialTheme.colorScheme.surface}
-            val ink=if(emphasis==ExpenseEmphasis.Large)MaterialTheme.colorScheme.onPrimaryContainer else if(emphasis==ExpenseEmphasis.Medium)MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
-            Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=5.dp).border(if(emphasis==ExpenseEmphasis.Large)2.dp else 1.dp,if(emphasis==ExpenseEmphasis.Large)MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant,RoundedCornerShape(4.dp)).background(fill,RoundedCornerShape(4.dp)).clickable{onClick(e)}.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
-                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                    CategoryIcon(e.category,size=36)
-                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)){
-                        Text(e.description,style=MaterialTheme.typography.titleMedium,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.ExtraBold else FontWeight.SemiBold,color=ink)
-                        Text(if(e.payers.size==1)"${book.personName(e.payers.keys.first())} paid ${money(e.amount)}" else "${e.payers.size} people paid ${money(e.amount)}",style=MaterialTheme.typography.bodySmall,color=ink)
-                    }
+            val net=(e.payers["self"]?:0)-(e.shares["self"]?:0)
+            val emphasis=expenseEmphasis(e.amount,settings[e.groupId]?.budget,largest[e.groupId]?:0L)
+            Row(Modifier.fillMaxWidth().clickable{onClick(e)}.padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                Column(Modifier.width(30.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(runCatching{LocalDate.parse(e.date).format(DateTimeFormatter.ofPattern("MMM"))}.getOrDefault(""),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);Text(e.date.takeLast(2),style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                CategoryIcon(e.category,size=36)
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                    Text(e.description,style=MaterialTheme.typography.bodyLarge,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.SemiBold else FontWeight.Normal)
+                    Text(if(e.payers.size==1)"${book.personName(e.payers.keys.first())} paid ${money(e.amount)}" else "${e.payers.size} people paid ${money(e.amount)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(emphasis==ExpenseEmphasis.Large)Text("Large expense",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
+                    if(showGroup)Text(book.groupName(e.groupId),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
-                    Text(money(e.amount),style=if(emphasis==ExpenseEmphasis.Large)MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.Black else FontWeight.SemiBold,color=ink)
-                    if(emphasis==ExpenseEmphasis.Large)Text("Large expense",style=MaterialTheme.typography.bodySmall,color=ink)
-                }
-                Text(if(showGroup)"${e.category} · ${book.groupName(e.groupId)}" else e.category,style=MaterialTheme.typography.bodySmall,color=ink)
-                FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
-                    Text(e.date,style=MaterialTheme.typography.bodySmall,color=if(dark)MaterialTheme.colorScheme.onSurfaceVariant else ink)
-                    Text("·",style=MaterialTheme.typography.bodySmall,color=ink)
-                    Text(if(net>0)"you lent" else if(net<0)"you borrowed" else "your share",style=MaterialTheme.typography.bodySmall,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(money(if(net==0L)share else kotlin.math.abs(net)),style=MaterialTheme.typography.bodySmall,fontWeight=FontWeight.Bold,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurface)
+                Column(horizontalAlignment=Alignment.End,modifier=Modifier.widthIn(max=112.dp)){
+                    Text(if(net>0)"you lent" else if(net<0)"you borrowed" else "your share",style=MaterialTheme.typography.labelSmall,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(money(if(net==0L)e.shares["self"]?:0 else kotlin.math.abs(net)),style=MaterialTheme.typography.titleMedium,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.Bold else FontWeight.Normal,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -116,24 +109,51 @@ internal fun LazyListScope.reportsContent(book:Book,expenses:List<Expense>,filte
     item{SectionLabel("Spending by person")}
     items(book.people){person->val amount=selected.sumOf{it.shares[person.id]?:0};ListItem(leadingContent={Avatar(person.name,size=36)},headlineContent={Text(person.name)},trailingContent={Text(money(amount))})}
 }
-internal fun LazyListScope.accountContent(book:Book,theme:String,onTheme:(String)->Unit,onProfile:()->Unit,onReports:()->Unit,onCsv:()->Unit,onBackup:()->Unit,onRestore:()->Unit,onTrash:()->Unit,onErase:()->Unit,onHelp:(()->Unit)?=null,onAbout:(()->Unit)?=null){
-    item{Row(Modifier.fillMaxWidth().clickable(onClick=onProfile).padding(22.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(16.dp)){Avatar(book.personName("self"),size=64);Column(Modifier.weight(1f)){Text(book.personName("self"),fontSize=24.sp,fontWeight=FontWeight.SemiBold);Text("Personal expense book",color=MaterialTheme.colorScheme.onSurfaceVariant)};Glyph("edit")}}
-    item{SectionLabel("Your book")}
+internal fun LazyListScope.accountContent(book:Book,theme:String,onTheme:(String)->Unit,onProfile:()->Unit,onReports:()->Unit,onCsv:()->Unit,onBackup:()->Unit,onRestore:()->Unit,onTrash:()->Unit,onErase:()->Unit,onHelp:(()->Unit)?=null,onAbout:(()->Unit)?=null,sessionEmail:String?=null,onSettings:(()->Unit)?=null,onLogout:(()->Unit)?=null,onShared:(()->Unit)?=null){
+    item{Row(Modifier.fillMaxWidth().padding(20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(16.dp)){
+        Avatar(book.personName("self"),size=64)
+        Column(Modifier.weight(1f)){Text(book.personName("self"),style=MaterialTheme.typography.titleLarge);Text(sessionEmail?:"Local expense book",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+        TextButton(onProfile){Text("Edit")}
+    }}
+    if(onShared!=null)item{Column(Modifier.padding(horizontal=16.dp,vertical=16.dp)){
+        MangaPanel(color=MaterialTheme.colorScheme.primaryContainer){
+            Text("Everyone's on the same page",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onPrimaryContainer)
+            Text("Shared groups, receipts and reports. Every feature is free.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onPrimaryContainer)
+            Button(onShared,Modifier.fillMaxWidth().heightIn(min=48.dp)){Text(if(sessionEmail==null)"Shared groups & Google sign-in" else "Manage shared groups")}
+        }
+    }}
+    item{SectionLabel("Preferences")}
     item{AccountRow("Spending insights","Categories, months and people","report",onReports)}
-    item{AccountRow("Recently deleted","Restore expenses and repayments","receipt",onTrash)}
-    item{SectionLabel("Data & backups")}
-    item{AccountRow("Export CSV","Open your expenses in a spreadsheet","download",onCsv)}
-    item{AccountRow("Save a backup","Complete ZIP with records, history and receipt photos","download",onBackup)}
-    item{AccountRow("Restore a backup","Restore a ZIP backup or an older JSON book","receipt",onRestore)}
-    item{SectionLabel("Appearance")}
-    item{Column(Modifier.padding(20.dp)){Choice("Theme",listOf("System","Light","Dark").map{it to it},theme,onTheme)}}
-    if(onHelp!=null)item{AccountRow("Help & support","Privacy, splits, repayments and troubleshooting","help",onHelp)}
+    if(onSettings!=null)item{AccountRow("Settings","Appearance, notifications and your data","filter",onSettings)}
+    else{
+        item{SectionLabel("Data & backups")}
+        item{AccountRow("Recently deleted","Restore expenses and repayments","receipt",onTrash)}
+        item{AccountRow("Export CSV","Open your expenses in a spreadsheet","download",onCsv)}
+        item{AccountRow("Save a backup","Complete ZIP with records, history and receipt photos","download",onBackup)}
+        item{AccountRow("Restore a backup","Restore a ZIP backup or an older JSON book","receipt",onRestore)}
+        item{Column(Modifier.padding(20.dp)){Choice("Theme",listOf("System","Light","Dark").map{it to it},theme,onTheme)}}
+        item{TextButton(onErase,Modifier.padding(horizontal=16.dp).heightIn(min=48.dp)){Text("Erase all local data",color=MaterialTheme.colorScheme.error)}}
+    }
+    if(onHelp!=null)item{AccountRow("Help & support","Get help, understand splits and contact us","help",onHelp)}
     if(onAbout!=null)item{AccountRow("About Kitna","Created by MT Studio","help",onAbout)}
-    item{Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Your records and backups",fontWeight=FontWeight.Bold);Text("Keep a complete ZIP backup before changing phones. App updates keep local records when installed over Kitna with the same signing key. Uninstalling or clearing app data removes this device's local records and photos.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){KitnaMark(size=28);Text("Kitna · Manga Panels · INR",style=MaterialTheme.typography.bodySmall)};Text("Created by MT Studio",style=MaterialTheme.typography.bodySmall)}}
-    item{TextButton(onErase,Modifier.padding(horizontal=10.dp)){Text("Erase all local data",color=MaterialTheme.colorScheme.error)}}
+    if(onLogout!=null)item{OutlinedButton(onLogout,Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=12.dp).heightIn(min=48.dp)){Text("Log out")}}
+    item{Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=24.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){KitnaMark(size=32);Column{Text("Kitna \u00b7 INR",style=MaterialTheme.typography.bodySmall);Text("Created by MT Studio",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
 }
-@Composable private fun AccountRow(title:String,subtitle:String,icon:String,onClick:()->Unit){ListItem(modifier=Modifier.heightIn(min=72.dp).clickable(onClick=onClick),headlineContent={Text(title,fontWeight=FontWeight.SemiBold)},supportingContent={Text(subtitle,style=MaterialTheme.typography.bodySmall)},leadingContent={Glyph(icon,color=MaterialTheme.colorScheme.primary)},trailingContent={Glyph("chevron")})}
-@Composable private fun Choice(label:String,options:List<Pair<String,String>>,value:String,onChange:(String)->Unit){var expanded by remember{mutableStateOf(false)};Box{OutlinedButton({expanded=true},Modifier.fillMaxWidth()){Text("$label: ${options.find{it.first==value}?.second?:"Choose"}")};DropdownMenu(expanded,{expanded=false}){options.forEach{(id,name)->DropdownMenuItem(text={Text(name)},onClick={onChange(id);expanded=false})}}}
+@Composable private fun AccountRow(title:String,subtitle:String,icon:String,onClick:()->Unit){
+    Surface(modifier=Modifier.fillMaxWidth().clickable(onClick=onClick)){
+        Row(Modifier.heightIn(min=72.dp).padding(horizontal=24.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)){
+            Glyph(icon,color=MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)){Text(title,style=MaterialTheme.typography.bodyLarge);Text(subtitle,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+            Glyph("chevron",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+@Composable private fun Choice(label:String,options:List<Pair<String,String>>,value:String,onChange:(String)->Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton({ expanded=true },Modifier.fillMaxWidth()) { Text("$label: ${options.find { it.first==value }?.second ?: "Choose"}") }
+        DropdownMenu(expanded,{ expanded=false }) { options.forEach { (id,name) -> DropdownMenuItem(text={ Text(name) },onClick={ onChange(id);expanded=false }) } }
+    }
 }
 @Composable internal fun FiltersDialog(book:Book,current:ExpenseFilter,onApply:(ExpenseFilter)->Unit,onClose:()->Unit){
     var draft by rememberSaveable(stateSaver=ExpenseFilter.Saver){mutableStateOf(current)};var error by rememberSaveable{mutableStateOf<String?>(null)}

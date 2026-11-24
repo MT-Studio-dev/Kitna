@@ -9,6 +9,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.kitna.ui.KitnaApp
@@ -20,12 +22,20 @@ class MainActivity : ComponentActivity() {
         intent?.data?.let { model().receiveCloudIntent(it); intent.data = null }
         val preferences = getSharedPreferences("appearance", MODE_PRIVATE)
         setContent {
-            var theme by rememberSaveable { mutableStateOf(preferences.getString("theme", "System") ?: "System") }
+            var theme by rememberSaveable { mutableStateOf(preferences.getString("theme", "Light") ?: "Light") }
             val model: KitnaViewModel = viewModel(factory = remember(application) {
                 ViewModelProvider.AndroidViewModelFactory(application)
             })
             val dark = theme == "Dark" || (theme == "System" && isSystemInDarkTheme())
             MangaTheme(dark) {
+                val background = MaterialTheme.colorScheme.background.toArgb()
+                SideEffect {
+                    @Suppress("DEPRECATION")
+                    window.statusBarColor = background
+                    @Suppress("DEPRECATION")
+                    window.navigationBarColor = background
+                    WindowInsetsControllerCompat(window, window.decorView).apply { isAppearanceLightStatusBars = !dark; isAppearanceLightNavigationBars = !dark }
+                }
                 KitnaApp(theme = theme, onTheme = { theme = it; preferences.edit().putString("theme", it).apply() }, vm = model)
             }
         }

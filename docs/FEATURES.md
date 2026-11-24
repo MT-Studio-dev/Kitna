@@ -1,6 +1,20 @@
 # Feature and verification matrix
 
-Kitna 0.5 supports an account-free local book and optional Google-authenticated shared groups. Local friends are named ledger participants. Shared invitations explicitly connect accounts to participant slots; display names do not establish identity. Payments are manually recorded external events, not bank-verified transfers.
+Kitna 0.6 supports an account-free local book and optional Google-authenticated shared groups. Local friends have optional email addresses. A verified matching Google identity can claim an email invitation; display names do not establish identity. Payments are manually recorded external events, not bank-verified transfers.
+
+## Version 0.6
+
+| Requirement | Implementation | Verification |
+|---|---|---|
+| Reference-based layout | Existing Manga Panels theme retained, Light default, compact rows, colored group headers, Groups first, per-member expandable balances | Native renders reviewed; default appearance, navigation, settings, balance expansion and settlement callback checks |
+| Short group codes | 12 unambiguous characters, owner-only retrieval, seven-day expiry, revocation and per-account attempt limit | Protocol client tests and actual PostgreSQL permission/throttling checks |
+| Email membership | Optional email on local friends, targeted shared invitations, verified Google identity matching on sync, stable existing participant IDs | Old model compatibility/financial totals checked; SQL tests reject unverified/profile-spoofed identities and preserve removed-member restrictions |
+| Settings, logout and leave | Categorized appearance/data/notification tools, visible signed-in logout, member leave and owner transfer | UI navigation checks; PostgreSQL owner transfer and sole-owner rejection |
+| Notifications | User opt-in, Android 13 permission request, private notification previews, account-scoped deduplication, shared process runtime and scheduled background checks | Deduplication/first-sync/own-edit/logout/job cancellation tests; real phone delivery remains unverified |
+
+Final v0.6 evidence: **129 core/app tests (52 + 77)**, **31 separate PostgreSQL tests**, assembly and lint with **0 errors/33 warnings**, recorded in `verify-v06-final.log` and `supabase-v06-tests.log`. Hosted protocol 2 and Google/anonymous-access preflight are in `cloud-preflight-v06.log`. Successful simulation does not replace real-device sign-in, two-account receipt tests, TalkBack or background delivery checks.
+
+## Historical v0.5 verification
 
 The final v0.5 run in `verify-v05-complete.log` passed **117 tests (50 core + 67 app)** with zero failures/errors/skips, APK assembly and lint with **0 errors/26 warnings**. The **16 PostgreSQL backend tests** are separate from those JVM/Android results. This matrix distinguishes executed checks and unverified real-phone behavior.
 

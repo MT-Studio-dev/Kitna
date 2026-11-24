@@ -2,9 +2,13 @@
 
 This backend is separate from Google provider configuration. The Android publishable key cannot create tables, policies or server functions. No database password, service-role key or personal access token belongs in the Android app or a chat message.
 
-Status on 24 November 2026: the user deployed the migration in the selected project. `cloud-preflight.log` records protocol HTTP 200/`ready:true`/schema 1, the receipt-bucket name, Google provider enabled, denied anonymous group RPC/table reads and a Google authorization redirect to `accounts.google.com`. Actual two-account Google consent, app callback and private photo/financial exchange are not yet verified. The deployment steps below are for review/recreation, not a request to reset or create a second project.
+Status on 24 November 2026: the user deployed both migrations and confirmed all four invitation checks true. `cloud-preflight-v06.log` independently confirms protocol HTTP 200/`ready:true`/schema 2, the receipt bucket, Google provider enabled, denied anonymous group RPC/table reads and the Google authorization redirect. Actual two-account Google consent, app callback, notifications and private photo/financial exchange are not yet verified. The deployment steps below are for recreation; do not reset the existing project.
 
 ## Deploy
+
+For an existing v0.5 installation, run only [`202611240002_invitation_codes.sql`](../supabase/migrations/202611240002_invitation_codes.sql), then [`verify_invitations.sql`](../supabase/verify_invitations.sql). All four columns should be true. The upgrade keeps current groups, financial history and receipts. A new project needs the base migration below first, followed by this invitation upgrade. Run migrations in order; rerunning only the old base afterward would restore old function definitions.
+
+Protocol 2 adds `kitna_group_code(p_group_id)` and `kitna_invite_email(p_group_id,p_participant_id,p_name,p_email)`. `kitna_accept_invite(p_token)` accepts short codes and compatible old invitations; short-code failures return an error/message object so failed-attempt throttling commits. `kitna_sync` claims matching pending email invitations using server-managed Google identity data before reading member groups. Email bindings and join attempts remain in the private schema and are not exposed to ordinary members.
 
 1. Open the intended Kitna project in Supabase Dashboard and confirm its project reference is `hoevqcscyvjgwrqxfevc`.
 2. Open **SQL Editor → New query**.

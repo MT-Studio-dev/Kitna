@@ -31,6 +31,7 @@ object BookValidation {
         unique(book.people.map { it.id }); unique(book.groups.map { it.id }); unique(book.expenses.map { it.id })
         unique(book.settlements.map { it.id }); unique(book.comments.map { it.id }); unique(book.activity.map { it.id }); unique(book.revisions.map { it.id })
         require(book.people.all { it.name.isNotBlank() && it.name.length <= 100 }) { "Every person needs a name up to 100 characters." }
+        book.people.forEach { EmailAddress.normalize(it.email) }
         val people = book.people.map { it.id }.toSet()
         val groups = book.groups.associateBy { it.id }
         fun isUuid(id: String) = runCatching { java.util.UUID.fromString(id).toString() == id.lowercase() }.getOrDefault(false)

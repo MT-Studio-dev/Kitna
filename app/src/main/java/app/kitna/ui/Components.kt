@@ -52,6 +52,9 @@ internal val Categories = listOf("General", "Food", "Groceries", "Travel", "Rent
             "report" -> { line(5f,20f,5f,12f); line(12f,20f,12f,4f); line(19f,20f,19f,8f) }
             "filter" -> { line(3f,6f,21f,6f); line(6f,12f,18f,12f); line(10f,18f,14f,18f) }
             "chevron" -> { line(9f,6f,15f,12f); line(15f,12f,9f,18f) }
+            "expand" -> { line(7f,9f,12f,14f);line(12f,14f,17f,9f) }
+            "collapse" -> { line(7f,14f,12f,9f);line(12f,9f,17f,14f) }
+            "settings" -> { circle(12f,12f,4f);circle(12f,12f,8f);line(12f,2f,12f,4f);line(12f,20f,12f,22f);line(2f,12f,4f,12f);line(20f,12f,22f,12f) }
             "check" -> { line(4f,12f,10f,18f); line(10f,18f,21f,6f) }
             "help" -> { circle(12f,12f,9f);drawArc(color,190f,280f,false,Offset(9f*scale,6f*scale),androidx.compose.ui.geometry.Size(6f*scale,6f*scale),style=Stroke(1.8f*scale));line(12f,12f,12f,14f);circle(12f,18f,.4f) }
             "download" -> { line(12f,3f,12f,16f); line(7f,11f,12f,16f); line(12f,16f,17f,11f); line(4f,19f,20f,19f) }
@@ -60,7 +63,7 @@ internal val Categories = listOf("General", "Food", "Groceries", "Travel", "Rent
         }
     }
 }
-@Composable internal fun ActionIcon(name: String, description: String, onClick: () -> Unit) { IconButton(onClick, Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = description }) { Glyph(name) } }
+@Composable internal fun ActionIcon(name: String, description: String, onClick: () -> Unit) { IconButton(onClick, Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = description }) { Glyph(name, color = LocalContentColor.current) } }
 @Composable internal fun Avatar(name: String, group: Boolean = false, size: Int = 48) {
     val palette=listOf(Color(0xFFE5F3EF),Color(0xFFFFEDE1),Color(0xFFECEAF8),Color(0xFFE8F0FC))
     Box(Modifier.size(size.dp).clip(if(group) RoundedCornerShape(12.dp) else CircleShape).background(palette[(name.hashCode() and Int.MAX_VALUE)%palette.size]),contentAlignment=Alignment.Center) {

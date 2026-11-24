@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -11,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -60,6 +63,21 @@ internal fun groupColor(key: String): Color = Color(
 
 @Composable internal fun GroupAvatar(group: Group, size: Int = 48) {
     GroupStylePreview(group.icon, group.color, size)
+}
+
+@Composable internal fun GroupHeader(group: Group, description: String) {
+    val fill = groupColor(group.color)
+    val ink = if (fill.luminance() > .42f) Color(0xFF173A31) else Color.White
+    Column(Modifier.fillMaxWidth().background(fill).drawBehind {
+        val w=size.width;val h=size.height
+        drawPath(Path().apply { moveTo(w*.42f,0f);lineTo(w,h*.5f);lineTo(w*.7f,h);lineTo(w*.1f,h);close() },Color.White.copy(alpha=.05f))
+        drawPath(Path().apply { moveTo(w*.7f,0f);lineTo(w*.3f,h);lineTo(w,h);close() },Color.Black.copy(alpha=.08f))
+    }.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        GroupSymbol(group.icon,Modifier.size(34.dp),ink)
+        Text(group.name,style=MaterialTheme.typography.headlineLarge,color=ink)
+        Text("${group.kind} · ${group.members.size} people",style=MaterialTheme.typography.bodyMedium,color=ink)
+        Text(description,style=MaterialTheme.typography.bodySmall,color=ink.copy(alpha=.85f),maxLines=2)
+    }
 }
 
 @Composable internal fun CategoryIcon(
