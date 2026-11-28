@@ -5,7 +5,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 fun newId(): String = UUID.randomUUID().toString()
-@Serializable data class Person(val id: String = newId(), val name: String, val email: String = "")
+@Serializable data class Person(val id: String = newId(), val name: String, val email: String = "", val phone: String = "", val accountId: String = "")
 @Serializable data class Group(
     val id: String = newId(), val name: String, val members: List<String>,
     val archived: Boolean = false, val kind: String = "Group", val simplifyDebts: Boolean = true,
@@ -38,3 +38,6 @@ fun newId(): String = UUID.randomUUID().toString()
     val sharedGroups: List<SharedGroupLink> = emptyList(), val pendingChanges: List<SharedChange> = emptyList()
 )
 data class Transfer(val from: String, val to: String, val amount: Long)
+
+/** Hidden ledgers retain the established accounting/backup format without creating visible groups. */
+val Group.isNonGroup: Boolean get() = kind == "Direct" || kind == "Non-group"

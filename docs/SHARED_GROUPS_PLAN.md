@@ -1,5 +1,9 @@
 # Shared groups: implementation and remaining checks
 
+## v0.7 implementation update
+
+Protocol 3 adds explicit friend relationships, private exact-email invitation inboxes, batch member selection, one-person group creation, hidden non-group ledgers and durable invitation routing. Signing in or synchronizing no longer accepts email group invitations: the recipient chooses Join for that group. Verified claims preserve historical participant IDs. A forwarded unaddressed friend link requires sender identity confirmation before attaching local balances. The new migration was deployed on 28 November 2026 after explicit user approval; protocol 3 and all 11 checks are verified, with existing data counts unchanged. See [v0.7 audit](V07_AUDIT.md), [deployment](CLOUD_DEPLOYMENT.md) and [App Links](APP_LINKS.md). The v0.6 behavior/evidence below is historical.
+
 Version 0.6 retains the Manga Panels theme, uses the supplied references for option placement, defaults to Light and uses Google sign-in. Both Supabase migrations are deployed and the protocol-2 hosted preflight passes. Verification passed 129 core/app tests and 31 database tests. Short group codes and verified Google email invitations supplement compatible old invitation tokens. Optional activity notifications share the same process book/auth/sync coordinator across foreground and scheduled jobs, avoiding independent caches overwriting each other. Actual two-account/two-phone behavior and background notification delivery remain unverified.
 
 ## User flow

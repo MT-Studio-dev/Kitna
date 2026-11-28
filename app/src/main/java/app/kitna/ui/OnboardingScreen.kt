@@ -28,10 +28,10 @@ import androidx.compose.ui.unit.dp
     busy: Boolean = false,
     error: String? = null
 ) {
-    var step by rememberSaveable { mutableIntStateOf(0) }
+    var learnMore by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     var nameError by rememberSaveable { mutableStateOf<String?>(null) }
-    BackHandler(enabled = step > 0 && !busy) { step-- }
+    BackHandler(enabled = learnMore && !busy) { learnMore = false }
     val beginLocal = {
         val cleaned = name.trim()
         if (cleaned.isBlank() || cleaned.length > 100) nameError = "Enter your name using 1 to 100 characters."
@@ -41,40 +41,28 @@ import androidx.compose.ui.unit.dp
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("KITNA!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic)
-                Text("Step ${step + 1} of 3", style = MaterialTheme.typography.bodyMedium)
+                Text("MT Studio", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.secondaryContainer, border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline)) {
                 Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Glyph(when (step) { 0 -> "groups"; 1 -> "friends"; else -> "check" }, Modifier.size(40.dp), MaterialTheme.colorScheme.onSecondaryContainer)
-                    Text(when (step) { 0 -> "GOOD TRIPS.\nFAIR SPLITS."; 1 -> "YOUR CREW.\nONE LEDGER."; else -> "MAKE IT\nYOURS." }, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    Text("GOOD TRIPS.\nFAIR SPLITS.", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
             }
-            when (step) {
-                0 -> {
-                    Text("Keep the good memories. Split the bills.", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    SetupLine("receipt", "Record the bill", "Add the total, who paid and who took part. Keep a receipt photo with the expense.")
-                    SetupLine("report", "Know where you stand", "See balances, track your trip budget and share a summary with your friends.")
-                    Text("Kitna tracks payments made elsewhere. It does not transfer money or confirm a bank payment.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                1 -> {
-                    SetupLine("groups", "Invite your friends", "Sign in with Google and use an invitation to join the same shared group. Adding a friend's name alone does not invite their account.")
-                    SetupLine("activity", "Keep going offline", "Cached records stay readable. Shared changes show Pending until the server accepts them; a conflict needs your review.")
-                    SetupLine("download", "Keep a complete backup", "A ZIP backup includes records, history and receipt photos. Keep a copy before changing phones or clearing app data.")
-                }
-                else -> {
-                    Text("Choose how to begin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("Google sign-in connects you with shared groups. You can also start with local records and connect an account later.", style = MaterialTheme.typography.bodyLarge)
-                    Button(onClick = onSignIn, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(4.dp)) { Text(if (busy) "Please wait…" else "Continue with Google") }
-                    HorizontalDivider()
-                    OutlinedTextField(value = name, onValueChange = { name = it; nameError = null }, label = { Text("Your name") }, singleLine = true, isError = nameError != null, supportingText = if (nameError == null) null else ({ Text(nameError!!, Modifier.semantics { liveRegion = LiveRegionMode.Assertive }) }), modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words), shape = RoundedCornerShape(4.dp), enabled = !busy)
-                    OutlinedButton(onClick = beginLocal, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(4.dp)) { Text("Start with local records") }
-                }
-            }
+            Text("Split bills with friends. Start on this phone and sign in whenever you're ready to share.", style = MaterialTheme.typography.bodyLarge)
+            OutlinedTextField(value = name, onValueChange = { name = it; nameError = null }, label = { Text("Your name") }, singleLine = true, isError = nameError != null, supportingText = if (nameError == null) null else ({ Text(nameError!!, Modifier.semantics { liveRegion = LiveRegionMode.Assertive }) }), modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words), shape = RoundedCornerShape(4.dp), enabled = !busy)
+            Button(onClick = beginLocal, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(4.dp)) { Text(if (busy) "Please wait…" else "Start with local records") }
+            OutlinedButton(onClick = onSignIn, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(4.dp)) { Text("Continue with Google") }
             error?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Assertive }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-            if (step < 2) Button(onClick = { step++ }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(4.dp)) { Text(if (step == 0) "Meet your crew" else "Choose how to begin") }
+            TextButton(onClick = { learnMore = !learnMore }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (learnMore) "Hide introduction" else "Learn how Kitna works") }
+            if (learnMore) {
+                SetupLine("receipt", "Record the bill", "Enter a description and amount, then save. Payer and equal shares are ready for you.")
+                SetupLine("groups", "Invite your friends", "Friends need no account for local tracking. Sign in with Google to accept invitations and share groups.")
+                SetupLine("activity", "Keep going offline", "Your records stay on this phone. Shared changes synchronize when you're connected.")
+                SetupLine("download", "Keep a complete backup", "A ZIP backup includes records, history and receipt photos. Save one before changing phones.")
+                Text("Kitna records payments made elsewhere. It does not transfer money.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                if (step > 0) TextButton(onClick = { step-- }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Previous") }
-                else Spacer(Modifier.width(1.dp))
+                Spacer(Modifier.width(1.dp))
                 TextButton(onClick = { onComplete("You") }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Skip for now") }
             }
         }

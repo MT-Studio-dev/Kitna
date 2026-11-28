@@ -1,0 +1,37 @@
+{
+  "version": "0.7.0",
+  "versionCode": 7,
+  "applicationId": "app.kitna",
+  "verifiedOn": "2026-11-28",
+  "tests": {
+    "core": {
+      "tests": 67,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "android": {
+      "tests": 100,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "postgresTests": {
+    "tests": 50,
+    "failures": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "Error": 0,
+    "Warning": 51,
+    "Information": 0
+  },
+  "gradle": "BUILD SUCCESSFUL",
+  "apk": "releases/Kitna-0.7.0-dev.apk",
+  "apkSha256": "ab3a9e817e9c1c1725c398f64dda8ec591b1875ebd5290ca94e7869b9bf6c109",
+  "signingCertificateSha256": "897263793402895ab3dd755435bb1545564f46a3ebe37247734896ee63e18895",
+  "deviceTesting": false,
+  "productionMigrationApplied": false,
+  "verifiedAppLinks": false
+}

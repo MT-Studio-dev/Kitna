@@ -29,11 +29,11 @@ import java.util.Locale
 
 internal fun money(value: Long): String = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN")).format(BigDecimal.valueOf(value, 2))
 internal fun Book.personName(id: String) = people.firstOrNull { it.id == id }?.name ?: "Deleted person"
-internal fun Book.groupName(id: String) = if(id.isEmpty()) "Personal book" else groups.firstOrNull { it.id == id }?.name ?: "Group"
+internal fun Book.groupName(id: String) = if(id.isEmpty()) "Personal book" else groups.firstOrNull { it.id == id }?.let { if(it.kind=="Direct") "Non-group expenses" else it.name } ?: "Group"
 internal val Owe: Color
-    @Composable get() = if (MaterialTheme.colorScheme.surface.luminance() < .3f) Color(0xFFFFB29A) else Color(0xFFA63C1E)
+    @Composable get() = balanceColor(owed = false, dark = MaterialTheme.colorScheme.surface.luminance() < .3f)
 internal val Owed: Color
-    @Composable get() = if (MaterialTheme.colorScheme.surface.luminance() < .3f) Color(0xFF99DFB4) else Color(0xFF17613D)
+    @Composable get() = balanceColor(owed = true, dark = MaterialTheme.colorScheme.surface.luminance() < .3f)
 internal val Categories = listOf("General", "Food", "Groceries", "Travel", "Rent", "Entertainment", "Utilities", "Shopping", "Health", "Other")
 
 @Composable internal fun Glyph(name: String, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
@@ -56,6 +56,9 @@ internal val Categories = listOf("General", "Food", "Groceries", "Travel", "Rent
             "collapse" -> { line(7f,14f,12f,9f);line(12f,9f,17f,14f) }
             "settings" -> { circle(12f,12f,4f);circle(12f,12f,8f);line(12f,2f,12f,4f);line(12f,20f,12f,22f);line(2f,12f,4f,12f);line(20f,12f,22f,12f) }
             "check" -> { line(4f,12f,10f,18f); line(10f,18f,21f,6f) }
+            "share" -> { circle(5f,12f,2.5f); circle(18f,5f,2.5f); circle(18f,19f,2.5f); line(7.5f,10.5f,15.5f,6.5f); line(7.5f,13.5f,15.5f,17.5f) }
+            "mail" -> { line(3f,5f,21f,5f); line(21f,5f,21f,19f); line(21f,19f,3f,19f); line(3f,19f,3f,5f); line(3f,6f,12f,13f); line(12f,13f,21f,6f) }
+            "calendar" -> { line(4f,5f,20f,5f); line(20f,5f,20f,21f); line(20f,21f,4f,21f); line(4f,21f,4f,5f); line(4f,10f,20f,10f); line(8f,3f,8f,7f); line(16f,3f,16f,7f) }
             "help" -> { circle(12f,12f,9f);drawArc(color,190f,280f,false,Offset(9f*scale,6f*scale),androidx.compose.ui.geometry.Size(6f*scale,6f*scale),style=Stroke(1.8f*scale));line(12f,12f,12f,14f);circle(12f,18f,.4f) }
             "download" -> { line(12f,3f,12f,16f); line(7f,11f,12f,16f); line(12f,16f,17f,11f); line(4f,19f,20f,19f) }
             "edit" -> { line(4f,20f,9f,19f); line(4f,20f,5f,15f); line(5f,15f,16f,4f); line(16f,4f,20f,8f); line(20f,8f,9f,19f) }
@@ -65,7 +68,7 @@ internal val Categories = listOf("General", "Food", "Groceries", "Travel", "Rent
 }
 @Composable internal fun ActionIcon(name: String, description: String, onClick: () -> Unit) { IconButton(onClick, Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = description }) { Glyph(name, color = LocalContentColor.current) } }
 @Composable internal fun Avatar(name: String, group: Boolean = false, size: Int = 48) {
-    val palette=listOf(Color(0xFFE5F3EF),Color(0xFFFFEDE1),Color(0xFFECEAF8),Color(0xFFE8F0FC))
+    val palette=listOf(Color(0xFFE5F3EF),Color(0xFFE5EBFA),Color(0xFFECEAF8),Color(0xFFE8F0FC))
     Box(Modifier.size(size.dp).clip(if(group) RoundedCornerShape(12.dp) else CircleShape).background(palette[(name.hashCode() and Int.MAX_VALUE)%palette.size]),contentAlignment=Alignment.Center) {
         if(group) Glyph("groups",color=Color(0xFF4A7569)) else Text(name.trim().split(" ").filter {it.isNotEmpty()}.take(2).joinToString(""){it.take(1).uppercase()},color=Color(0xFF326F60),fontSize=(size/3).sp,fontWeight=FontWeight.SemiBold)
     }

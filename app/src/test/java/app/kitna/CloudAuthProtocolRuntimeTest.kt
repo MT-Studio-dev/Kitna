@@ -224,7 +224,7 @@ class CloudAuthProtocolRuntimeTest {
         )
         val client = http(network)
         val missing = failure { client.json("POST", "/rest/v1/rpc/missing") } as CloudFailure
-        assertEquals("PGRST202", missing.code); assertTrue(missing.message!!.contains("database setup"))
+        assertEquals("PGRST202", missing.code); assertTrue(missing.message!!.contains("service update")); assertTrue(missing.message!!.contains("local records are saved"))
         val limited = failure { client.json("GET", "/limited") } as CloudFailure
         assertEquals(429, limited.status); assertTrue(limited.message!!.contains("pending changes are saved"))
         val conflict = failure { client.json("GET", "/conflict") } as CloudFailure

@@ -32,6 +32,9 @@ object BookValidation {
         unique(book.settlements.map { it.id }); unique(book.comments.map { it.id }); unique(book.activity.map { it.id }); unique(book.revisions.map { it.id })
         require(book.people.all { it.name.isNotBlank() && it.name.length <= 100 }) { "Every person needs a name up to 100 characters." }
         book.people.forEach { EmailAddress.normalize(it.email) }
+        require(book.people.all { it.phone.length <= 100 && (it.accountId.isEmpty() || runCatching { java.util.UUID.fromString(it.accountId) }.isSuccess) }) { "Invalid friend contact or account identity." }
+        val accounts = book.people.map { it.accountId }.filter { it.isNotEmpty() }
+        require(accounts.size == accounts.distinct().size) { "Duplicate friend accounts." }
         val people = book.people.map { it.id }.toSet()
         val groups = book.groups.associateBy { it.id }
         fun isUuid(id: String) = runCatching { java.util.UUID.fromString(id).toString() == id.lowercase() }.getOrDefault(false)
@@ -50,9 +53,9 @@ object BookValidation {
             require(isUuid(change.id) && isUuid(change.entityId) && change.accountId == link.accountId && change.expectedVersion >= 0 && change.kind in setOf("share", "expense", "settlement", "comment", "group") && change.payload.length in 2..20_971_520) { "Invalid pending shared change." }
         }
         book.groups.forEach { g ->
-            require(g.name.isNotBlank() && g.name.length <= 100 && g.members.size >= 2 && "self" in g.members && g.members.all { it in people }) { "A group has invalid members or a missing name." }
+            require(g.name.isNotBlank() && g.name.length <= 100 && g.members.isNotEmpty() && "self" in g.members && g.members.all { it in people }) { "A group has invalid members or a missing name." }
             unique(g.members)
-            require(g.kind in setOf("Group", "Trip", "Home", "Couple", "Direct") && (g.kind != "Direct" || g.members.size == 2)) { "A group has an invalid type." }
+            require(g.kind in setOf("Group", "Trip", "Home", "Couple", "Friends", "Other", "Direct", "Non-group") && (g.kind != "Direct" || g.members.size == 2)) { "A group has an invalid type." }
             GroupAppearance.validate(g.icon, g.color)
             budget(g.budget)
         }

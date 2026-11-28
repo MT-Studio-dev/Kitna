@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +23,8 @@ import kotlinx.coroutines.launch
     val balances = Accounting.balances(book, group.id)
     val scope = rememberCoroutineScope()
     var leave by remember { mutableStateOf(false) }
+    var addingMembers by rememberSaveable { mutableStateOf(false) }
+    if (addingMembers) { AddFriendsScreen(book, vm, group, onClose = { addingMembers = false }, onAccount = onMembers); return }
     var error by remember { mutableStateOf<String?>(null) }
     BackHandler(onBack = onBack)
     Scaffold(topBar = { TopAppBar(title = { Text("Group settings") }, navigationIcon = { ActionIcon("back", "Back", onBack) }) }) { padding ->
@@ -29,14 +32,14 @@ import kotlinx.coroutines.launch
             item { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) { GroupAvatar(group, 56); Column(Modifier.weight(1f)) { Text(group.name, style = MaterialTheme.typography.titleLarge); Text(group.kind, color = MaterialTheme.colorScheme.onSurfaceVariant) }; ActionIcon("edit", "Edit group", onEdit) } }
             item { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
             item { GroupInviteCard(book, group, vm, onMembers) }
-            item { SectionLabel("Group members"); TextButton(onMembers, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Glyph("groups", color = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(12.dp)); Text("Add people & manage invitations") } }
+            item { SectionLabel("Group members"); TextButton({ addingMembers = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Glyph("add", color = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(12.dp)); Text("Add members") } }
             items(group.members, key = { it }) { id ->
                 val person = book.people.first { it.id == id }
                 val net = balances[id] ?: 0
                 val participant = link?.snapshot?.participants?.find { it.id == link.people[id] }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     Avatar(person.name, size = 44)
-                    Column(Modifier.weight(1f)) { Text(person.name + if (id == "self") " (you)" else "", style = MaterialTheme.typography.bodyLarge); Text(if (id == "self") cloud.session?.email ?: "This device" else person.email.ifBlank { if (participant?.active == false) "Left group" else if (participant?.userId != null) "Account connected" else "Not connected yet" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Column(Modifier.weight(1f)) { Text(person.name + if (id == "self") " (you)" else "", style = MaterialTheme.typography.bodyLarge); Text(if (id == "self") "You" else if (participant?.active == false) "Left group" else if (participant?.userId != null) "Joined" else if (link != null && person.email.isNotBlank()) "Invited" else "No account needed", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     if (net != 0L) Column(horizontalAlignment = Alignment.End) { Text(if (net > 0) "gets back" else "owes", style = MaterialTheme.typography.bodySmall, color = if (net > 0) Owed else Owe); Text(money(kotlin.math.abs(net)), fontWeight = FontWeight.Medium, color = if (net > 0) Owed else Owe) }
                 }
             }

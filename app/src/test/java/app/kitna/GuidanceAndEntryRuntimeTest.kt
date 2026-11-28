@@ -57,11 +57,13 @@ class GuidanceAndEntryRuntimeTest {
         var chosenName: String? = null
         var signIns = 0
         compose.setContent { MaterialTheme { OnboardingScreen(onComplete = { chosenName = it }, onSignIn = { signIns++ }) } }
-        compose.onNodeWithText("Step 1 of 3").assertIsDisplayed()
-        compose.onNodeWithText("Meet your crew").performScrollTo().performClick()
-        compose.onNodeWithText("Step 2 of 3").assertIsDisplayed()
-        compose.onNodeWithText("Invite your friends").assertIsDisplayed()
-        compose.onNodeWithText("Choose how to begin").performScrollTo().performClick()
+        compose.onNodeWithText("Your name").assertIsDisplayed()
+        compose.onNodeWithText("Start with local records").assertIsDisplayed()
+        compose.onNodeWithText("Continue with Google").assertIsDisplayed()
+        compose.onNodeWithText("Step 1 of 3").assertDoesNotExist()
+        compose.onNodeWithText("Learn how Kitna works").performScrollTo().performClick()
+        compose.onNodeWithText("Invite your friends").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Hide introduction").performScrollTo().performClick()
         compose.onNodeWithText("Continue with Google").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, signIns); assertNull(chosenName) }
         compose.onNodeWithText("Your name").performScrollTo().performTextInput("Maya")
@@ -79,7 +81,9 @@ class GuidanceAndEntryRuntimeTest {
         var finished = false
         compose.setContent { MaterialTheme { ExpenseEditor(book, original, group.id, vm, duplicate = true) { finished = true } } }
         compose.onNodeWithText("Duplicate expense").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Receipt photos, 0 attached").performClick()
         compose.onNodeWithText("0 of 10 photos · stored on this device").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Done").performClick()
         compose.onNodeWithText("Save").performClick()
         compose.waitUntil(10_000) { finished }
         val saved = vm.book.value!!

@@ -1,0 +1,54 @@
+{
+  "date": "2026-11-28",
+  "timezone": "Asia/Calcutta",
+  "project_ref": "hoevqcscyvjgwrqxfevc",
+  "authorization": "User explicitly approved applying the tested migration",
+  "channel": "Authenticated Supabase Dashboard SQL Editor",
+  "migration": "supabase/migrations/202611250001_simplified_collaboration.sql",
+  "sha256": "E97447C3C347A0A6543FD0FF9041E4FC2229068E867043C1C9C8BF691CC4547E",
+  "observed_migration_result": "Success. No rows returned",
+  "checks": {
+    "friend_tokens_private": true,
+    "friends_require_sign_in": true,
+    "batch_member_rpc_available": true,
+    "private_claim_helper_denied": true,
+    "group_inbox_requires_sign_in": true,
+    "collaboration_update_installed": true,
+    "group_preview_requires_sign_in": true,
+    "direct_membership_writes_denied": true,
+    "invitation_sender_lookup_indexed": true,
+    "friendship_reverse_lookup_indexed": true,
+    "group_acceptance_requires_sign_in": true
+  },
+  "before": {
+    "groups": 5,
+    "participants": 12,
+    "records": 26,
+    "revisions": 8,
+    "receipts": 2
+  },
+  "after": {
+    "groups": 5,
+    "participants": 12,
+    "records": 26,
+    "revisions": 8,
+    "receipts": 2
+  },
+  "protocol": {
+    "ready": true,
+    "receiptBucket": "kitna-receipts",
+    "schemaVersion": 3,
+    "invitationsReady": true,
+    "friendInvitationsReady": true
+  },
+  "hosted_security_advisor": {
+    "rerun": true,
+    "errors": 0,
+    "warnings": 22,
+    "suggestions": 7,
+    "observed_warning_category": "Signed-In Users Can Execute SECURITY DEFINER Function"
+  },
+  "real_account_invitations_created_for_verification": false,
+  "two_account_device_verification_performed": false,
+  "verified_https_app_links": false
+}

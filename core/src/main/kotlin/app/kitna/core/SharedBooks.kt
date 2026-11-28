@@ -153,13 +153,16 @@ object SharedBooks {
         for (participant in snapshot.participants) {
             val existing = peopleMap.entries.firstOrNull { it.value == participant.id }?.key
             val localId = if (participant.id == snapshot.myParticipantId) "self" else existing
+                ?: participant.userId?.let { user -> people.firstOrNull { it.accountId == user }?.id }
                 ?: participant.userId?.let { user -> book.sharedGroups.flatMap { it.userIds.entries }.firstOrNull { it.value == user }?.key }
                 ?: "shared-person:${participant.id}"
             peopleMap[localId] = participant.id
             participant.userId?.let { userIds[localId] = it }
             if (localId != "self") {
                 val at = people.indexOfFirst { it.id == localId }
-                val person = Person(localId, participant.name, people.getOrNull(at)?.email.orEmpty())
+                val previous = people.getOrNull(at)
+                require(participant.userId == null || previous?.accountId.isNullOrEmpty() || previous?.accountId == participant.userId) { "This historical participant is linked to a different verified account." }
+                val person = (previous ?: Person(localId, participant.name)).copy(name = participant.name, accountId = participant.userId ?: previous?.accountId.orEmpty())
                 if (at < 0) people += person else people[at] = person
             }
         }

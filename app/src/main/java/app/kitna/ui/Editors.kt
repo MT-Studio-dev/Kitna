@@ -19,7 +19,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,19 +48,10 @@ import java.util.Locale
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-private val EditCategories = listOf("General", "Food", "Groceries", "Travel", "Rent", "Entertainment", "Utilities", "Shopping", "Transport", "Health", "Other")
-private val TextMapSaver = Saver<Map<String, String>, ArrayList<String>>(
-    save = { ArrayList(it.flatMap { entry -> listOf(entry.key, entry.value) }) },
-    restore = { it.chunked(2).associate { entry -> entry[0] to entry[1] } }
-)
-private val ReceiptDraftSaver = Saver<List<ReceiptPhoto>, String>(
-    save = { Json.encodeToString(it) }, restore = { Json.decodeFromString(it) }
-)
 private fun Book.editorName(id: String) = people.firstOrNull { it.id == id }?.name ?: "Unknown person"
 private fun amountText(value: Long) = BigDecimal.valueOf(value, 2).toPlainString()
 private fun editorMoney(value: Long): String = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-IN")).format(BigDecimal.valueOf(value, 2))
 private fun formFingerprint(vararg fields: String) = fields.joinToString("") { "${it.length}:$it" }
-private fun mapFingerprint(values: Map<String, String>) = values.toSortedMap().entries.joinToString("") { formFingerprint(it.key, it.value) }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable private fun EditorScreen(
@@ -153,213 +143,6 @@ private fun mapFingerprint(values: Map<String, String>) = values.toSortedMap().e
     }
 }
 
-private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs: Map<String, String>): Pair<Map<String, Long>, Map<String, Long>> {
-    require(total > 0) { "Enter an amount greater than zero." }
-    require(members.isNotEmpty()) { "Choose at least one person to split with." }
-    val ordered = members.sorted()
-    return when (mode) {
-        "Equal" -> Accounting.split(total, ordered.associateWith { 1L }) to emptyMap()
-        "Exact amounts" -> {
-            val values = ordered.associateWith { Accounting.money(inputs[it].orEmpty().ifBlank { "0" }) }
-            require(values.values.sum() == total) { "Exact amounts must add up to ${editorMoney(total)}." }
-            values to values
-        }
-        "Percentages" -> {
-            val values = ordered.associateWith { Accounting.money(inputs[it].orEmpty().ifBlank { "0" }) }
-            require(values.values.sum() == 10000L) { "Percentages must add up to 100%." }
-            Accounting.split(total, values) to values
-        }
-        "Adjustments" -> {
-            val values = ordered.associateWith { Accounting.signedMoney(inputs[it].orEmpty().ifBlank { "0" }) }
-            Accounting.adjustedSplit(total, values) to values
-        }
-        else -> {
-            val values = ordered.associateWith { inputs[it].orEmpty().ifBlank { "1" }.toLongOrNull()?.also { count -> require(count in 0..1_000_000) { "Use whole-number shares from 0 to 1,000,000." } } ?: error("Shares must be whole numbers.") }
-            Accounting.split(total, values) to values
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable fun ExpenseEditor(book: Book, existing: Expense?, initialGroupId: String?, vm: KitnaViewModel, duplicate: Boolean = false, onClose: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val originalJson by rememberSaveable { mutableStateOf<String?>(existing?.let { Json.encodeToString(it) }) }
-    val originalExpense = remember(originalJson) { originalJson?.let { Json.decodeFromString<Expense>(it) } }
-    val preferences = LocalContext.current.getSharedPreferences("expense_entry", android.content.Context.MODE_PRIVATE)
-    val rememberedGroup = preferences.getString("last_group", null)?.takeIf { id -> book.groups.any { it.id == id && !it.archived } || (id.startsWith("friend:") && book.people.any { it.id == id.removePrefix("friend:") }) }
-    val initial = existing?.groupId ?: initialGroupId ?: rememberedGroup ?: book.groups.firstOrNull { !it.archived }?.id ?: book.people.firstOrNull { it.id != "self" }?.let { "friend:${it.id}" }.orEmpty()
-    var contextId by rememberSaveable { mutableStateOf(initial) }
-    val friend = contextId.takeIf { it.startsWith("friend:") }?.removePrefix("friend:")
-    val group = if (friend != null) Group(id = contextId, name = book.editorName(friend), members = listOf("self", friend), kind = "Direct") else book.groups.firstOrNull { it.id == contextId }
-    val sharedLink = book.sharedGroups.find { it.groupId == group?.id }
-    val inactivePeople = sharedLink?.snapshot?.participants.orEmpty().filterNot { it.active }.mapNotNull { p -> sharedLink?.people?.entries?.firstOrNull { it.value == p.id }?.key }.toSet()
-    val members = group?.members.orEmpty().filter { (existing != null && !duplicate) || it !in inactivePeople }
-    val validExisting = existing?.takeIf { it.groupId == contextId }
-    val expenseId = rememberSaveable { if (duplicate) newId() else existing?.id ?: newId() }
-    var description by rememberSaveable { mutableStateOf(existing?.description.orEmpty()) }
-    var amount by rememberSaveable { mutableStateOf(existing?.amount?.let(::amountText).orEmpty()) }
-    var date by rememberSaveable { mutableStateOf(if (duplicate) LocalDate.now().toString() else existing?.date ?: LocalDate.now().toString()) }
-    var category by rememberSaveable { mutableStateOf(existing?.category ?: "General") }
-    var autoCategory by rememberSaveable { mutableStateOf(existing == null) }
-    var notes by rememberSaveable { mutableStateOf(existing?.notes.orEmpty()) }
-    var receiptPhotos by rememberSaveable(stateSaver = ReceiptDraftSaver) {
-        mutableStateOf(if (duplicate) emptyList() else existing?.receipts ?: emptyList())
-    }
-    var mode by rememberSaveable { mutableStateOf(existing?.splitMode?.takeIf { it in listOf("Equal", "Exact amounts", "Percentages", "Shares", "Adjustments") } ?: "Equal") }
-    var payer by rememberSaveable(contextId) { mutableStateOf(validExisting?.payers?.keys?.firstOrNull { it in members } ?: preferences.getString("payer:$contextId", null)?.takeIf { it in members } ?: "self") }
-    var multiple by rememberSaveable(contextId) { mutableStateOf((validExisting?.payers?.size ?: 0) > 1) }
-    var paid by rememberSaveable(contextId, stateSaver = TextMapSaver) { mutableStateOf<Map<String, String>>(validExisting?.payers?.mapValues { amountText(it.value) } ?: emptyMap()) }
-    var participants by rememberSaveable(contextId) { mutableStateOf(ArrayList(validExisting?.shares?.keys?.filter { it in members } ?: members)) }
-    var values by rememberSaveable(contextId, stateSaver = TextMapSaver) {
-        mutableStateOf<Map<String, String>>(if (validExisting == null) emptyMap() else if (mode == "Exact amounts") validExisting.shares.mapValues { amountText(it.value) } else validExisting.splitWeights.mapValues { if (mode in listOf("Percentages", "Adjustments")) amountText(it.value) else it.value.toString() })
-    }
-    var localBusy by remember { mutableStateOf(false) }
-    var receiptBusy by remember { mutableStateOf(false) }
-    val sharedBusy by vm.saving.collectAsStateWithLifecycle()
-    val busy = localBusy || sharedBusy || receiptBusy
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
-    var errorField by rememberSaveable { mutableStateOf<String?>(null) }
-    val descriptionFocus = remember { FocusRequester() }
-    val amountFocus = remember { FocusRequester() }
-    val anchors = remember { listOf("group", "description", "amount", "split", "payers", "date", "notes").associateWith { BringIntoViewRequester() } }
-    var validationAttempt by remember { mutableIntStateOf(0) }
-    LaunchedEffect(validationAttempt) {
-        if (validationAttempt > 0) {
-            anchors[errorField]?.bringIntoView()
-            when (errorField) { "description" -> descriptionFocus.requestFocus(); "amount" -> amountFocus.requestFocus() }
-        }
-    }
-    val contexts = book.groups.filter { !it.archived || it.id == existing?.groupId }.map { it.id to if (it.kind == "Direct") "With ${it.members.filter { id -> id != "self" }.joinToString { id -> book.editorName(id) }}" else it.name } +
-        book.people.filter { it.id != "self" && (it.id == friend || book.groups.none { g -> g.kind == "Direct" && it.id in g.members && !g.archived }) }.map { "friend:${it.id}" to "With ${it.name}" }
-    val preview = runCatching { splitInputs(Accounting.money(amount), participants.toSet(), mode, values).first }
-    val currentDraft = formFingerprint(contextId, description, amount, date, category, autoCategory.toString(), notes, mode, payer, multiple.toString(), mapFingerprint(paid), formFingerprint(*participants.sorted().toTypedArray()), mapFingerprint(values), Json.encodeToString(receiptPhotos))
-    val initialDraft = rememberSaveable { currentDraft }
-    EditorScreen(if (duplicate) "Duplicate expense" else if (existing == null) "Add expense" else "Edit expense", busy, error.takeIf { errorField == null }, dirty = duplicate || currentDraft != initialDraft, onClose = onClose, onSave = {
-        scope.launch {
-            localBusy = true; error = null
-            var checking: String? = "group"
-            runCatching {
-                val currentGroup = requireNotNull(group) { "Add a friend or create a group first." }
-                checking = "description"
-                require(description.isNotBlank() && description.trim().length <= 500) { "Enter a description up to 500 characters." }
-                checking = "amount"
-                val total = Accounting.money(amount)
-                require(total > 0) { "Enter a positive amount." }
-                checking = "split"
-                val allocations = splitInputs(total, participants.toSet(), mode, values)
-                checking = "payers"
-                val payers = if (multiple) members.associateWith { Accounting.money(paid[it].orEmpty().ifBlank { "0" }) }.filterValues { it > 0 } else mapOf(payer to total)
-                require(payers.values.sum() == total) { "Payer contributions must equal the expense total." }
-                checking = "date"
-                LocalDate.parse(date)
-                checking = "notes"
-                require(notes.trim().length <= 4000) { "Notes must be at most 4,000 characters." }
-                val draft = Expense(id = expenseId, groupId = currentGroup.id, description = description.trim(), amount = total, payers = payers, shares = allocations.first, category = category, date = date, notes = notes.trim(), splitMode = mode, splitWeights = allocations.second, receipts = receiptPhotos)
-                Accounting.validate(draft, currentGroup)
-                checking = null
-                val actualGroupId = if (friend == null) currentGroup.id else vm.ensureDirectGroup(friend).getOrThrow()
-                vm.saveExpense(draft.copy(groupId = actualGroupId), original = if (duplicate) null else originalExpense).getOrThrow()
-                preferences.edit().putString("last_group", actualGroupId).putString("payer:$actualGroupId", payer).apply()
-            }.onSuccess { onClose() }.onFailure { error = it.message ?: "Could not save this expense."; errorField = checking; validationAttempt++ }
-            localBusy = false
-        }
-    }) {
-        if (contexts.isEmpty()) Text("Add a friend first, or create a group from the Groups tab.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (duplicate) Text("A new bill with today's date. Review the copied amount and split before saving. Receipt photos stay with the original.", style = MaterialTheme.typography.bodyMedium)
-        Column(Modifier.bringIntoViewRequester(anchors.getValue("group"))) {
-            EditChoice("With you and", contexts, contextId, { contextId = it }, enabled = existing == null || duplicate)
-            if (errorField == "group") FieldProblem(error)
-        }
-        EditField(description, {
-            description = it
-            if (errorField == "description") { error = null; errorField = null }
-            if (autoCategory) category = ExpenseCategories.suggest(it) ?: "General"
-        }, "Description", modifier = Modifier.fillMaxWidth().focusRequester(descriptionFocus).bringIntoViewRequester(anchors.getValue("description")), fieldError = error.takeIf { errorField == "description" })
-        EditChoice("Category", (EditCategories + category).distinct().map { it to it }, category, {
-            category = it
-            autoCategory = false
-        }, optionIcon = { CategoryIcon(it, size = 28) })
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Auto-categorize", style = MaterialTheme.typography.labelLarge)
-                Text(
-                    if (autoCategory && ExpenseCategories.suggest(description) != null) "Suggested from your description"
-                    else if (autoCategory) "Uses words in your description"
-                    else "Your chosen category will stay unchanged",
-                    fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = autoCategory, onCheckedChange = {
-                autoCategory = it
-                if (it) category = ExpenseCategories.suggest(description) ?: "General"
-            }, modifier = Modifier.semantics { contentDescription = "Auto-categorize expenses" })
-        }
-        OutlinedTextField(value = amount, onValueChange = { amount = it; if (errorField == "amount") { error = null; errorField = null } }, modifier = Modifier.fillMaxWidth().focusRequester(amountFocus).bringIntoViewRequester(anchors.getValue("amount")).semantics { if (errorField == "amount") error?.let { semanticError(it) } }, label = { Text("Total amount") }, prefix = { Text("₹ ") }, singleLine = true, shape = RoundedCornerShape(4.dp), isError = errorField == "amount", supportingText = if (errorField == "amount") ({ FieldProblem(error) }) else null, textStyle = LocalTextStyle.current.copy(fontSize = 30.sp, fontWeight = FontWeight.Medium), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-        Column(Modifier.bringIntoViewRequester(anchors.getValue("payers"))) { if (errorField == "payers") FieldProblem(error) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Multiple people paid", Modifier.weight(1f)); Switch(checked = multiple, onCheckedChange = { multiple = it }, modifier = Modifier.semantics { contentDescription = "Multiple people paid" })
-        }
-        if (!multiple) EditChoice("Paid by", members.map { it to book.editorName(it) }, payer, { payer = it })
-        else EditSection("Who paid?", "Contributions must equal the total amount.") {
-            val summary = runCatching {
-                val total = Accounting.money(amount)
-                require(total > 0) { "Enter a bill total greater than zero." }
-                PayerAllocation.summary(total, members.map { Accounting.money(paid[it].orEmpty().ifBlank { "0" }) })
-            }
-            summary.getOrNull()?.let { allocation ->
-                Surface(color = if (allocation.remaining < 0) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(10.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            if (allocation.remaining < 0) "Overpaid: ${editorMoney(allocation.overpaid)}"
-                            else "Remaining: ${editorMoney(allocation.remaining)}",
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (allocation.remaining < 0) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Text("Entered ${editorMoney(allocation.entered)} of ${editorMoney(Accounting.money(amount))}", fontSize = 14.sp)
-                    }
-                }
-            }
-            if (summary.isFailure) Text(
-                if (amount.isBlank()) "Enter the bill total to see the remaining amount."
-                else summary.exceptionOrNull()?.message ?: "Check the amounts entered for each payer.",
-                fontSize = 14.sp, color = if (amount.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
-            )
-            members.forEach { id ->
-                EditField(paid[id].orEmpty(), { paid = paid + (id to it) }, "${book.editorName(id)} paid · ₹", money = true)
-                val available = runCatching {
-                    val total = Accounting.money(amount)
-                    require(total > 0)
-                    PayerAllocation.summary(total, members.filter { it != id }.map { Accounting.money(paid[it].orEmpty().ifBlank { "0" }) }).remaining.also { require(it >= 0) }
-                }.getOrNull()
-                TextButton(onClick = { available?.let { paid = paid + (id to amountText(it)) } }, enabled = available != null && !busy,
-                    modifier = Modifier.align(Alignment.End).semantics { contentDescription = "Use remaining for ${book.editorName(id)}" }) {
-                    Text("Use remaining")
-                }
-            }
-        }
-        EditSection("Split between", "Choose the people included in this expense.", modifier = Modifier.bringIntoViewRequester(anchors.getValue("split"))) {
-            if (errorField == "split") FieldProblem(error)
-            EditChoice("Split method", listOf("Equal", "Exact amounts", "Percentages", "Shares", "Adjustments").map { it to it }, mode, { mode = it; values = emptyMap() })
-            if (mode == "Adjustments") Text("Enter an extra or reduced amount for each person. The remaining amount is split equally.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            members.forEach { id ->
-                PersonToggle(book.editorName(id), id in participants, onChange = { selected -> participants = ArrayList(if (selected) participants + id else participants - id) })
-                if (id in participants && mode != "Equal") EditField(values[id].orEmpty(), { values = values + (id to it) }, when (mode) { "Percentages" -> "Percentage · %"; "Shares" -> "Shares · default 1"; "Adjustments" -> "Adjustment · ₹ (use - to reduce)"; else -> "Exact amount · ₹" }, money = mode != "Adjustments")
-            }
-            HorizontalDivider()
-            preview.getOrNull()?.forEach { (id, share) -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(book.editorName(id), fontSize = 14.sp); Text(editorMoney(share), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) } }
-            if (amount.isNotBlank() && preview.isFailure) Text(preview.exceptionOrNull()?.message ?: "Check the split amounts.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Column(Modifier.bringIntoViewRequester(anchors.getValue("date"))) {
-            EditDate(date) { date = it; if (errorField == "date") { error = null; errorField = null } }
-            if (errorField == "date") FieldProblem(error)
-        }
-        EditField(notes, { notes = it; if (errorField == "notes") { error = null; errorField = null } }, "Notes (optional)", singleLine = false, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(anchors.getValue("notes")), fieldError = error.takeIf { errorField == "notes" })
-        EditSection("Receipt photos", "Attach a bill photo from this phone. Photos are included in complete backups.") {
-            ReceiptAttachmentPanel(receiptPhotos, { receiptPhotos = it }, enabled = !busy, onBusyChange = { receiptBusy = it })
-        }
-    }
-}
-
 @Composable fun PersonEditor(book: Book, existing: Person?, vm: KitnaViewModel, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val personId = rememberSaveable { existing?.id ?: newId() }
@@ -371,12 +154,12 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
     val busy = localBusy || sharedBusy
     var remove by rememberSaveable { mutableStateOf(false) }
     EditorScreen(if (existing == null) "Add a friend" else if (existing.id == "self") "Your profile" else "Edit friend", busy, error, dirty = name != existing?.name.orEmpty() || email != existing?.email.orEmpty(), onClose = onClose, onSave = {
-        scope.launch { localBusy = true; error = null; vm.savePerson(Person(id = personId, name = name, email = email)).onSuccess { onClose() }.onFailure { error = it.message }; localBusy = false }
+        scope.launch { localBusy = true; error = null; vm.savePerson(existing?.copy(name = name, email = email) ?: Person(id = personId, name = name, email = email)).onSuccess { onClose() }.onFailure { error = it.message }; localBusy = false }
     }) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Box(Modifier.size(80.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .12f), CircleShape), contentAlignment = Alignment.Center) { Text(name.take(1).uppercase().ifBlank { "+" }, fontSize = 32.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) } }
         EditField(name, { name = it }, if (existing?.id == "self") "Your name" else "Friend's name")
         if (existing?.id != "self") OutlinedTextField(email, { email = it }, label = { Text("Friend's Google email (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), singleLine = true, modifier = Modifier.fillMaxWidth())
-        Text("Add their Google email to connect them automatically when you share a group. They sign in with that same email to see it. Leave blank to track a local friend or invite them with a group code.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+        Text("A name is all you need to track expenses. Add an email later when you want to invite them.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
         if (existing != null && existing.id != "self") TextButton(onClick = { remove = true }, enabled = !busy) { Text("Delete friend", color = MaterialTheme.colorScheme.error) }
     }
     if (remove) AlertDialog(onDismissRequest = { remove = false }, title = { Text("Delete ${existing?.name}?") }, text = { Text("Friends referenced by groups or financial history cannot be deleted. Rename them instead to preserve your records.") }, confirmButton = { TextButton(onClick = {
@@ -402,8 +185,8 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
     var pickerColour by rememberSaveable { mutableStateOf(colour) }
     var newFriendName by rememberSaveable { mutableStateOf("") }
     var newFriendEmail by rememberSaveable { mutableStateOf("") }
-    val cloud by vm.cloud.state.collectAsStateWithLifecycle()
-    var shareOnCreate by rememberSaveable { mutableStateOf(vm.cloud.state.value.session != null) }
+    var membersOpen by rememberSaveable { mutableStateOf(existing != null) }
+    var optionsOpen by rememberSaveable { mutableStateOf(existing != null) }
     var newFriendId by rememberSaveable { mutableStateOf(newId()) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var localBusy by remember { mutableStateOf(false) }
@@ -418,34 +201,28 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
                 val budget = budgetInput.takeIf { it.isNotBlank() }?.let { Accounting.money(it) }
                 require(budget == null || budget > 0) { "Enter a positive budget, or leave it blank." }
                 vm.saveGroup(Group(id = groupId, name = name.trim(), members = members.distinct(), archived = existing?.archived ?: false, kind = kind, simplifyDebts = simplify, icon = icon, color = colour, budget = budget), original = originalGroup).getOrThrow()
-            }.onSuccess { if (existing == null && onCreated != null) onCreated(groupId, shareOnCreate && cloud.session != null) else onClose() }.onFailure { error = it.message ?: "Could not save group." }
+            }.onSuccess { if (existing == null && onCreated != null) onCreated(groupId, false) else onClose() }.onFailure { error = it.message ?: "Could not save group." }
             localBusy = false
         }
     }) {
         EditField(name, { name = it }, "Group name")
-        if (existing == null) EditSection("Connect your crew", "A shared group syncs expenses with friends who sign in using the emails you add. You can also copy a join code from the group page.") {
-            if (cloud.session != null) Row(verticalAlignment = Alignment.CenterVertically) { Text("Share this group online", Modifier.weight(1f)); Switch(shareOnCreate, { shareOnCreate = it }) }
-            else Text("Create your group now. Sign in with Google from the group page to get a join code.", style = MaterialTheme.typography.bodySmall)
-        }
-        if (existing?.kind != "Direct") EditChoice("Group type", listOf("Group" to "Other", "Trip" to "Trip", "Home" to "Home", "Couple" to "Couple"), kind, { kind = it })
-        if (existing?.kind != "Direct") EditSection("Trip budget", "A total spending limit for the whole group. Leave blank to remove the limit.") {
-            EditField(budgetInput, { budgetInput = it }, "Trip budget · ₹ (optional)", money = true)
-        }
-        EditSection("Group appearance") {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        if (existing?.kind != "Direct") {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 GroupStylePreview(icon = icon, color = colour)
-                Column(Modifier.weight(1f)) {
-                    Text(name.ifBlank { "Your group" }, fontWeight = FontWeight.SemiBold)
-                    Text("${icon.replaceFirstChar { it.uppercase() }} · ${colour.replaceFirstChar { it.uppercase() }}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                TextButton(onClick = { pickerIcon = icon; pickerColour = colour; appearanceOpen = true }, enabled = !busy) { Text("Choose icon and colour") }
             }
-            OutlinedButton(onClick = { pickerIcon = icon; pickerColour = colour; appearanceOpen = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Choose icon and colour") }
+            EditChoice("Group type (optional)", listOf("Group" to "Other", "Trip" to "Trip", "Home" to "Home", "Couple" to "Couple", "Friends" to "Friends"), kind, { kind = it })
         }
-        EditSection("Members", if (sharedGroup) "Use invitations in Shared groups to connect another person's account. Existing participants stay with the group's history." else "Keep people with existing expenses in the group to preserve its history.") {
+        TextButton(onClick = { membersOpen = !membersOpen }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Glyph("groups", color = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(12.dp))
+            Text(if (membersOpen) "Hide members" else "Add members · ${members.size} selected")
+        }
+        if (existing == null) Text("You can add friends and share an invitation after creating the group.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (membersOpen) EditSection("Members", if (sharedGroup) "Use invitations in Shared groups to connect another person's account. Existing participants stay with the group's history." else "Keep people with existing expenses in the group to preserve its history.") {
             book.people.filter { if (sharedGroup) it.id in members else existing?.kind != "Direct" || it.id in members }.forEach { person -> PersonToggle(person.name, person.id in members, enabled = !sharedGroup && person.id != "self" && existing?.kind != "Direct", onChange = { checked -> if (!sharedGroup && person.id != "self" && existing?.kind != "Direct") members = ArrayList(if (checked) members + person.id else members - person.id) }) }
             if (existing?.kind != "Direct" && !sharedGroup) {
                 HorizontalDivider()
-                if (book.people.size < 2) Text("Add a friend below to start your group.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                if (book.people.size < 2) Text("You can add someone now or invite friends later.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 EditField(newFriendName, { newFriendName = it }, "New friend's name")
                 OutlinedTextField(newFriendEmail, { newFriendEmail = it }, label = { Text("Friend's Google email (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedButton(onClick = {
@@ -460,9 +237,13 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
                 }, enabled = newFriendName.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) { Text("Add friend to group") }
             }
         }
+        TextButton(onClick = { optionsOpen = !optionsOpen }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (optionsOpen) "Hide more options" else "More options") }
+        if (optionsOpen) {
+        if (existing?.kind != "Direct") EditSection("Trip budget", "An optional total spending limit for this group.") { EditField(budgetInput, { budgetInput = it }, "Trip budget · ₹ (optional)", money = true) }
         EditSection("Simplify debts", "Suggest repayments based on everyone's net balance, so fewer payments are needed.") {
             Row(verticalAlignment = Alignment.CenterVertically) { Text("Simplify group debts", Modifier.weight(1f)); Switch(simplify, { simplify = it }) }
             Text("Turn this off to keep repayments between the original payers and participants.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         }
         if (existing != null) {
             OutlinedButton(onClick = { confirm = "archive" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (existing.archived) "Restore group" else "Archive group") }
@@ -525,62 +306,6 @@ private fun splitInputs(total: Long, members: Set<String>, mode: String, inputs:
         val action = confirm; confirm = null
         scope.launch { localBusy = true; val result = if (action == "delete") vm.deleteGroup(existing!!.id) else vm.archive(existing!!); result.onSuccess { onClose() }.onFailure { error = it.message }; localBusy = false }
     }) { Text("Confirm") } }, dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } })
-}
-
-@Composable fun SettlementEditor(book: Book, existing: Settlement?, initialGroupId: String?, initialFrom: String?, initialTo: String?, vm: KitnaViewModel, onClose: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val originalJson by rememberSaveable { mutableStateOf<String?>(existing?.let { Json.encodeToString(it) }) }
-    val originalSettlement = remember(originalJson) { originalJson?.let { Json.decodeFromString<Settlement>(it) } }
-    val id = rememberSaveable { existing?.id ?: newId() }
-    val options = book.groups.filter { !it.archived || it.id == existing?.groupId }
-    val requested = initialGroupId?.let { initial ->
-        if (initial.startsWith("friend:")) options.firstOrNull { it.kind == "Direct" && initial.removePrefix("friend:") in it.members }?.id ?: initial else initial
-    }
-    val initial = existing?.groupId ?: requested ?: options.firstOrNull()?.id ?: book.people.firstOrNull { it.id != "self" }?.let { "friend:${it.id}" }.orEmpty()
-    var groupId by rememberSaveable { mutableStateOf(initial) }
-    val friend = groupId.takeIf { it.startsWith("friend:") }?.removePrefix("friend:")
-    val group = if (friend != null && book.people.any { it.id == friend }) Group(id = groupId, name = book.editorName(friend), members = listOf("self", friend), kind = "Direct") else options.firstOrNull { it.id == groupId }
-    val contexts = options.map { it.id to if (it.kind == "Direct") "With ${it.members.filter { id -> id != "self" }.joinToString { id -> book.editorName(id) }}" else it.name } +
-        book.people.filter { it.id != "self" && (it.id == friend || options.none { g -> g.kind == "Direct" && it.id in g.members }) }.map { "friend:${it.id}" to "With ${it.name}" }
-    val transfers = group?.takeIf { friend == null }?.let { Accounting.transfers(book, it.id) }.orEmpty()
-    var from by rememberSaveable(groupId) { mutableStateOf(existing?.from ?: initialFrom?.takeIf { it in group?.members.orEmpty() } ?: transfers.firstOrNull()?.from ?: "self") }
-    var to by rememberSaveable(groupId) { mutableStateOf(existing?.to ?: initialTo?.takeIf { it in group?.members.orEmpty() } ?: transfers.firstOrNull()?.to ?: group?.members?.firstOrNull { it != from }.orEmpty()) }
-    var amount by rememberSaveable(groupId) { mutableStateOf(existing?.amount?.let(::amountText) ?: transfers.firstOrNull { it.from == from && it.to == to }?.amount?.let(::amountText).orEmpty()) }
-    var method by rememberSaveable { mutableStateOf(existing?.method ?: "Cash") }
-    var date by rememberSaveable { mutableStateOf(existing?.date ?: LocalDate.now().toString()) }
-    var reference by rememberSaveable { mutableStateOf(existing?.reference.orEmpty()) }
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
-    var localBusy by remember { mutableStateOf(false) }
-    val sharedBusy by vm.saving.collectAsStateWithLifecycle()
-    val busy = localBusy || sharedBusy
-    var remove by rememberSaveable { mutableStateOf(false) }
-    val currentDraft = formFingerprint(groupId, from, to, amount, method, date, reference)
-    val initialDraft = rememberSaveable { currentDraft }
-    EditorScreen(if (existing == null) "Settle up" else "Edit repayment", busy, error, dirty = currentDraft != initialDraft, onClose = onClose, onSave = {
-        scope.launch {
-            localBusy = true; error = null
-            runCatching {
-                val currentGroup = requireNotNull(group) { "Add a friend or create a group first." }
-                val draft = Settlement(id = id, groupId = groupId, from = from, to = to, amount = Accounting.money(amount), method = method, date = date, reference = reference.trim())
-                BookValidation.settlement(draft, currentGroup)
-                val actualGroupId = if (friend == null) currentGroup.id else vm.ensureDirectGroup(friend).getOrThrow()
-                vm.saveSettlement(draft.copy(groupId = actualGroupId)).getOrThrow()
-            }.onSuccess { onClose() }.onFailure { error = it.message }; localBusy = false
-        }
-    }) {
-        Text("Record a payment", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("Keep track of money already paid in cash, UPI or a bank transfer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        EditChoice("Group or friend", contexts, groupId, { groupId = it }, enabled = existing == null)
-        EditChoice("Paid by", group?.members.orEmpty().map { it to book.editorName(it) }, from, { selected -> from = selected; if (to == selected) to = group?.members?.firstOrNull { it != selected }.orEmpty() })
-        EditChoice("Paid to", group?.members.orEmpty().filter { it != from }.map { it to book.editorName(it) }, to, { to = it })
-        EditField(amount, { amount = it }, "Amount · ₹", money = true)
-        EditChoice("Payment method", listOf("Cash", "UPI", "Bank transfer", "Other").map { it to it }, method, { method = it })
-        EditDate(date) { date = it }
-        EditField(reference, { reference = it }, "Reference or note (optional)")
-        Text("This only updates your records. Kitna does not transfer money or verify the payment.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (existing != null) TextButton(onClick = { remove = true }, enabled = !busy) { Text("Delete repayment", color = MaterialTheme.colorScheme.error) }
-    }
-    if (remove) AlertDialog(onDismissRequest = { remove = false }, title = { Text("Delete this repayment?") }, text = { Text("Balances will be recalculated. Its history will remain available.") }, confirmButton = { TextButton(onClick = { remove = false; scope.launch { localBusy = true; vm.deleteSettlement(existing!!.id).onSuccess { onClose() }.onFailure { error = it.message }; localBusy = false } }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { remove = false }) { Text("Cancel") } })
 }
 
 @Composable fun ExpenseDetails(book: Book, expenseId: String, vm: KitnaViewModel, onEdit: (Expense) -> Unit, onDuplicate: ((Expense) -> Unit)? = null, onClose: () -> Unit) {

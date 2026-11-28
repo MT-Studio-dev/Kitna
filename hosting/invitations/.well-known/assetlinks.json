@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.kitna",
+      "sha256_cert_fingerprints": [
+        "89:72:63:79:34:02:89:5A:B3:DD:75:54:35:BB:15:45:56:4F:46:A3:EB:E3:72:47:73:48:96:EE:63:E1:88:95"
+      ]
+    }
+  }
+]

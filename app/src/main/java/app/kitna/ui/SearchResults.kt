@@ -21,7 +21,7 @@ internal fun LazyListScope.searchContent(
 ) {
     val expenses = book.expenses.filter { !it.deleted && BookSearch.expense(book, it, query) }.sortedByDescending { it.date }
     val payments = book.settlements.filter { !it.deleted && BookSearch.settlement(book, it, query) }.sortedByDescending { it.date }
-    val groups = book.groups.filter { it.kind != "Direct" && BookSearch.group(book, it, query) }
+    val groups = book.groups.filter { !it.isNonGroup && BookSearch.group(book, it, query) }
     val friends = book.people.filter { it.id != "self" && BookSearch.person(book, it, query) }
     val events = book.activity.filter { BookSearch.activity(book, it, query) }.asReversed()
     val count = expenses.size + payments.size + groups.size + friends.size + events.size

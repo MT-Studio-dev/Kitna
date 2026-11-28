@@ -13,9 +13,9 @@ These are user-supplied assets, not newly generated replacements. About displays
 
 ## Manga Panels interface and revised layout
 
-Version 0.6 retains the existing Manga Panels cream/ink light theme, warm accents, strong panels and corresponding dark theme. Light is the default. The supplied expense-tracker screenshots guide only the placement of options: compact lists, group headers, expandable member balances and grouped settings. They do not replace the app's colors or visual identity. Keep labels, controls, amounts and navigation readable at system text sizes. The creator artwork retains its original colors/background; do not recolor it to match budget or expense states.
+For version 0.7.1, the user requested replacing the brown/warm base palette. Use cool neutral light surfaces, navy/slate dark surfaces and accessible indigo/blue actions. Keep the Manga Panels typography, panel structure, original artwork and saved light/dark preference. Explicitly chosen group colors remain available. Keep labels, controls, amounts and navigation readable at system text sizes. The creator artwork retains its original colors/background; do not recolor it to match budget or expense states.
 
-Budget risk has a separate labeled green/amber/orange/red scale. Expense amount weight and the large-expense label represent magnitude; labeled balance colors show debt direction. Do not use color alone to convey those meanings.
+Budget risk keeps labeled severity states. Expense magnitude is conveyed through amount size/weight and subtle row emphasis, without a "Large expense" caption. Balance phrases and amounts explain who owes whom; color is a supporting cue.
 
 ## Creator and support destinations
 

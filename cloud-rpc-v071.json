@@ -1,0 +1,66 @@
+{
+  "project": "https://hoevqcscyvjgwrqxfevc.supabase.co",
+  "probe_authentication": "publishable key only; no signed-in user; expected deny before any mutation",
+  "results": [
+    {
+      "rpc": "kitna_friend_invite",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_friend_invite"
+    },
+    {
+      "rpc": "kitna_friends",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_friends"
+    },
+    {
+      "rpc": "kitna_group_invitations",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_group_invitations"
+    },
+    {
+      "rpc": "kitna_preview_invite",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_preview_invite"
+    },
+    {
+      "rpc": "kitna_preview_friend_invite",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_preview_friend_invite"
+    },
+    {
+      "rpc": "kitna_accept_friend_invite",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_accept_friend_invite"
+    },
+    {
+      "rpc": "kitna_accept_friend_email",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_accept_friend_email"
+    },
+    {
+      "rpc": "kitna_accept_group_email",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_accept_group_email"
+    },
+    {
+      "rpc": "kitna_add_members",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_add_members"
+    },
+    {
+      "rpc": "kitna_revoke_friend_invite",
+      "http": 401,
+      "code": "42501",
+      "message": "permission denied for function kitna_revoke_friend_invite"
+    }
+  ]
+}

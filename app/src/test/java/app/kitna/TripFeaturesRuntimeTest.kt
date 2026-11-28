@@ -38,7 +38,7 @@ class TripFeaturesRuntimeTest {
     }
 
     private fun waitForEditorToClose() {
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Save").fetchSemanticsNodes().isEmpty() && compose.onAllNodesWithText("Saving…").fetchSemanticsNodes().isEmpty() && compose.onAllNodesWithText("Friend's name").fetchSemanticsNodes().isEmpty() }
     }
 
     private fun seed(budget: Long? = null): KitnaViewModel {
@@ -67,7 +67,8 @@ class TripFeaturesRuntimeTest {
         compose.onNodeWithText("Trip budget · ₹ (optional)").performScrollTo().performTextInput("2000.00")
         compose.onNodeWithText("Save").performClick()
         waitForEditorToClose()
-        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Group settings").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").assertHasClickAction().assertIsDisplayed().performClick()
         compose.onNodeWithText("Remaining: ₹750.00").performScrollTo().assertIsDisplayed()
 
         val extra = Expense("taxi", "goa", "Taxi", 100000,
@@ -130,6 +131,7 @@ class TripFeaturesRuntimeTest {
         source.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it)) }
         bitmap.recycle()
 
+        compose.onNodeWithContentDescription("Receipt photos, 0 attached").performClick()
         compose.onNodeWithText("Attach receipt photo").performScrollTo().performClick()
         val request = shadowOf(compose.activity).nextStartedActivityForResult
         assertNotNull("The attachment button must launch the system picker", request)
@@ -138,6 +140,7 @@ class TripFeaturesRuntimeTest {
             Intent().setData(Uri.fromFile(source)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("View receipt 1").fetchSemanticsNodes().isNotEmpty() }
         assertTrue("The test's original gallery file should still exist before removing it", source.delete())
+        compose.onNodeWithText("Done").performClick()
         compose.onNodeWithText("Save").performClick()
         waitForText("Expense details")
 

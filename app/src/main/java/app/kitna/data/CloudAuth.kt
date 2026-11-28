@@ -62,7 +62,7 @@ internal class CloudHttp(private val base: String = BuildConfig.SUPABASE_URL, pr
                 val code = error?.get("code")?.jsonPrimitive?.contentOrNull ?: error?.get("error_code")?.jsonPrimitive?.contentOrNull ?: "http_$status"
                 val message = (error?.get("message") ?: error?.get("error_description") ?: error?.get("msg"))?.jsonPrimitive?.contentOrNull
                 throw CloudFailure(status, code, when {
-                    code == "PGRST202" -> "Shared groups need the Kitna database setup. Open the cloud deployment guide and apply its migration."
+                    code == "PGRST202" -> "This feature needs a Kitna service update. Your local records are saved."
                     status == 429 -> "Too many requests. Wait a little and retry; your pending changes are saved."
                     else -> message?.take(300) ?: "The server could not complete this request ($status)."
                 })

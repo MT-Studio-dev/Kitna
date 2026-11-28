@@ -1,5 +1,23 @@
 # Feature and verification matrix
 
+## Version 0.7.1
+
+Cool indigo/slate themes replace the brown base palette. Expense magnitude uses visual emphasis without a caption. Settle up focuses on payer, recipient and amount with optional details hidden. The approved protocol-3 migration is now deployed; all 11 hosted checks pass, and the missing invitation functions are present.
+
+**68 core + 112 Android tests pass**, debug assembly passes and lint reports **0 errors/52 warnings**. The migration retains 50 local PostgreSQL test passes. See [v0.7.1 notes](releases/v0.7.1.md) for native renders and actual hosted verification limits.
+
+
+## Version 0.7
+
+Compact expense editor with immediate save; payer/split sheets; toolbar category/date/receipts/notes; one or multiple friends outside groups; name-only local friends and groups; unified contacts/member selection; invitation links with restart-safe authentication; explicit friend and group acceptance; verified historical identity claims; protocol-3 migration. Existing ledger/outbox/CAS/receipt/backup machinery is retained.
+
+See [v0.7 release notes](releases/v0.7.0.md) for executed test/build/lint totals and limitations, [audit](V07_AUDIT.md) for the implementation map, and [App Links](APP_LINKS.md) for deployment. The new migration is not deployed to production and no hosted App Link verification is claimed.
+
+Final v0.7 evidence: **67 core + 100 Android tests**, **50 separate PostgreSQL tests**, assembly success and lint **0 errors/51 warnings**. APK signature matches the established development certificate. Native light/dark renders are in `docs/screenshots/v0.7.0/`; physical devices, hosted two-account flows and HTTPS domain verification remain untested.
+
+The evidence below describes previous releases.
+
+
 Kitna 0.6 supports an account-free local book and optional Google-authenticated shared groups. Local friends have optional email addresses. A verified matching Google identity can claim an email invitation; display names do not establish identity. Payments are manually recorded external events, not bank-verified transfers.
 
 ## Version 0.6

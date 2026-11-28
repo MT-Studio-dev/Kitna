@@ -1,5 +1,22 @@
 # Deploying Kitna shared groups
 
+## v0.7 protocol 3 upgrade (deployed 28 November 2026)
+
+Following the user's explicit approval, `supabase/migrations/202611250001_simplified_collaboration.sql` was applied to project `hoevqcscyvjgwrqxfevc` through the authenticated Dashboard SQL Editor on 28 November 2026. The approved file SHA-256 is `E97447C3C347A0A6543FD0FF9041E4FC2229068E867043C1C9C8BF691CC4547E`. Its transaction completed successfully, and all 11 checks in `supabase/verify_collaboration.sql` returned true. Existing counts were unchanged: 5 groups, 12 participants, 26 records, 8 expense revisions and 2 receipt-metadata records. No database reset was performed.
+
+The live preflight now returns HTTP 200, `ready:true`, protocol 3, Google enabled, the expected Google authorization redirect and denied anonymous group access. All 10 new RPC signatures now return the expected anonymous permission denial (`401`/`42501`) instead of missing-function `404`/`PGRST202`. Evidence is in `cloud-preflight-v071.log`, `cloud-rpc-v071.json` and `cloud-deployment-v071.json`. The hosted Security Advisor was rerun and reported 0 errors, 22 warnings and 7 suggestions; visible warnings flag authenticated execution of the intentionally exposed, authorization-checked `SECURITY DEFINER` RPCs. This is not a claim of zero advisor warnings or completed two-account/device testing.
+
+For a separate project, apply this migration after both existing migrations, then run `supabase/verify_collaboration.sql`. Do not reset the database or alter previously deployed migrations. The local harness passes 50 PostgreSQL tests; these remain separate from hosted and real-account verification.
+
+New RPCs are `kitna_preview_invite`, `kitna_add_members`, `kitna_friend_invite`, `kitna_preview_friend_invite`, `kitna_accept_friend_invite`, `kitna_accept_friend_email`, `kitna_revoke_friend_invite`, `kitna_friends`, `kitna_group_invitations` and `kitna_accept_group_email`. Existing code/invitation, share, apply, sync, receipt and membership contracts remain. New friend tables are private, RLS-enabled, inaccessible directly to anon/authenticated roles; authorized RPCs derive identity from the session and verified Google identity. No public private-contact directory exists.
+
+Protocol 3 deliberately stops automatic email-group acceptance during sync. A recipient chooses Join from the Shared groups inbox, follows a targeted link, or enters the group code; only that selected group's verified invitation is claimed. Other invitations remain pending. Existing historical participant IDs and removed-member authorization are preserved. Unbound legacy participant-claim bearer links require a new verified-email invitation. General group codes remain a new-slot fallback.
+
+Name-only groups and Friends/Other/Non-group kinds are valid; Direct retains exactly two people and cannot use general new-member links. Batch additions are owner-authorized, transactionally validated and idempotent by stable participant UUID. Expenses involving local/invited slots can be entered before those people register.
+
+See [APP_LINKS.md](APP_LINKS.md) for URL, host, signing fingerprint and browser fallback deployment. The older text below describes the previous deployment and remains historical context.
+
+
 This backend is separate from Google provider configuration. The Android publishable key cannot create tables, policies or server functions. No database password, service-role key or personal access token belongs in the Android app or a chat message.
 
 Status on 24 November 2026: the user deployed both migrations and confirmed all four invitation checks true. `cloud-preflight-v06.log` independently confirms protocol HTTP 200/`ready:true`/schema 2, the receipt bucket, Google provider enabled, denied anonymous group RPC/table reads and the Google authorization redirect. Actual two-account Google consent, app callback, notifications and private photo/financial exchange are not yet verified. The deployment steps below are for recreation; do not reset the existing project.

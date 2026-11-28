@@ -27,7 +27,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.kitna.KitnaViewModel
 import app.kitna.core.Book
+import app.kitna.core.isNonGroup
 import app.kitna.core.SharedBooks
+import app.kitna.data.InvitationLinks
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -37,11 +39,12 @@ import java.util.Date
 /** Accept a copied invitation message, a Kitna deep link, or the token itself. */
 internal fun sharedInviteToken(input: String): String {
     val value = input.trim()
-    val link = Regex("app\\.kitna://join\\?[^\\s]+", RegexOption.IGNORE_CASE).find(value)?.value
-    val token = if (link != null) Uri.parse(link).getQueryParameter("token").orEmpty() else value
+    val link = Regex("(?:app\\.kitna://join\\?[^\\s]+|https://[^\\s]+)", RegexOption.IGNORE_CASE).find(value)?.value
+    val token = if (link != null) InvitationLinks.parse(Uri.parse(link))?.takeIf { it.kind == "group" }?.token
+        ?: throw IllegalArgumentException("Paste a valid Kitna invitation link or code.") else value
     val compact = token.replace(Regex("[-\\s]"), "").uppercase(java.util.Locale.ROOT)
     if (compact.matches(Regex("[2-9A-HJ-NP-Z]{12}"))) return compact
-    require(token.matches(Regex("[A-Za-z0-9_-]{20,512}"))) { "Paste a valid Kitna invitation link or code." }
+    require(token.matches(Regex("[A-Za-z0-9_-]{20,300}"))) { "Paste a valid Kitna invitation link or code." }
     return token
 }
 
@@ -70,7 +73,11 @@ internal fun sharedInviteToken(input: String): String {
     var revokingGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     val session = state.session
     val busy = state.busy || localBusy
-    val groups = book.groups.filter { it.kind != "Direct" }.sortedWith(compareByDescending<app.kitna.core.Group> { it.id == initialGroupId }.thenBy { it.name.lowercase() })
+    var groupInbox by remember { mutableStateOf(JsonArray(emptyList())) }
+    LaunchedEffect(session?.id, state.collaborationReady) {
+        if (session != null && state.collaborationReady) vm.cloud.groupInvitations().onSuccess { groupInbox = it }.onFailure { error = it.message }
+    }
+    val groups = book.groups.filter { !it.isNonGroup || it.id == initialGroupId }.sortedWith(compareByDescending<app.kitna.core.Group> { it.id == initialGroupId }.thenBy { it.name.lowercase() })
     BackHandler { if (!busy) onBack() }
     LaunchedEffect(state.pendingInvite) { state.pendingInvite?.let { joinInput = it } }
 
@@ -153,16 +160,26 @@ internal fun sharedInviteToken(input: String): String {
             state.message?.takeIf { it != error }?.let { text -> item { Text(text, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall) } }
             notice?.let { text -> item { Text(text, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.primary) } }
             if (session != null) {
+                if (groupInbox.isNotEmpty()) item { Text("Group invitations", style = MaterialTheme.typography.titleLarge) }
+                items(groupInbox, key = { "group-invite:${it.jsonObject.getValue("groupId").jsonPrimitive.content}" }) { item ->
+                    val invitation = item.jsonObject
+                    ListItem(headlineContent = { Text(invitation["name"]?.jsonPrimitive?.contentOrNull ?: "Group invitation") }, supportingContent = { Text("Invited to your verified email") }, trailingContent = { TextButton({ run({ vm.cloud.acceptGroupEmail(invitation.getValue("groupId").jsonPrimitive.content) }) }, enabled = !busy) { Text("Join group") } })
+                }
                 item {
                     MangaPanel {
                         Text("Join a friend's group", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
-                        Text("Enter your friend's 12-character group code. Groups invited to your Google email appear automatically after syncing.", style = MaterialTheme.typography.bodySmall)
+                        Text("Paste an invitation link or enter a 12-character group code.", style = MaterialTheme.typography.bodySmall)
                         OutlinedTextField(value = joinInput, onValueChange = { joinInput = it; error = null }, label = { Text("Group code") }, placeholder = { Text("ABCD-EFGH-2345") }, modifier = Modifier.fillMaxWidth(), enabled = !busy, singleLine = true)
                         Button(onClick = {
                             run({
                                 val token = try { sharedInviteToken(joinInput) } catch (failure: IllegalArgumentException) { return@run Result.failure(failure) }
-                                vm.cloud.join(token).onSuccess { joinInput = "" }
-                            }, "Group joined")
+                                if (!state.collaborationReady) vm.cloud.join(token).onSuccess { joinInput = "" }
+                                else {
+                                    vm.cloud.receive(Uri.parse(InvitationLinks.url("group", token)))
+                                    joinInput = ""
+                                    Result.success(Unit)
+                                }
+                            })
                         }, enabled = !busy && state.ready == true && joinInput.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Join group") }
                     }
                 }
@@ -236,7 +253,8 @@ internal fun sharedInviteToken(input: String): String {
                                         TextButton(onClick = { removingGroupId = group.id; removingPersonId = personId }, enabled = !busy && state.ready == true, modifier = Modifier.heightIn(min = 48.dp)) { Text("Remove ${book.personName(personId)}", color = MaterialTheme.colorScheme.error) }
                                     }
                                 }
-                                if (owner) {
+                                if (owner && group.kind == "Direct") GroupInviteCard(book, group, vm, onBack)
+                                else if (owner) {
                                     OutlinedButton(onClick = { showCode(group.id) }, enabled = !busy && state.invitationsReady && !group.archived, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Show group code") }
                                     OutlinedButton(onClick = { invite(group.id, null) }, enabled = !busy && state.invitationsReady && !group.archived, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add friend by email") }
                                     TextButton(onClick = { revokingGroupId = group.id }, enabled = !busy && state.ready == true, modifier = Modifier.heightIn(min = 48.dp)) { Text("Revoke pending invitations") }
@@ -291,7 +309,9 @@ internal fun sharedInviteToken(input: String): String {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Kitna group code", token)); notice = "Group code copied"
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Copy code") }
-                Text("In Kitna, open Groups → Join group and enter this code. Anyone with it can join until it expires or is revoked.", style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { shareInvitation(context, "Join our group $invitationGroup on Kitna to track and split expenses together.\n${InvitationLinks.url("group", token)}\nGroup code: $token") }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Share invite link") }
+                TextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Kitna invitation", InvitationLinks.url("group", token))); notice = "Invitation link copied" }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Copy link") }
+                Text("Open the link in Kitna, or use Groups → Join group and enter this code. Links expire after seven days and can be revoked.", style = MaterialTheme.typography.bodySmall)
             }
         }, confirmButton = { TextButton(onClick = { invitation = null }) { Text("Done") } })
     }

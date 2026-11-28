@@ -69,12 +69,29 @@ class KitnaViewModel(application: Application) : AndroidViewModel(application) {
         require(original==null || it.sharedGroups.none { link -> link.groupId==settlement.groupId } || it.settlements.find { s -> s.id==settlement.id }==original) { "This repayment changed on another phone. Reopen the latest repayment before saving." }
         BookActions.saveSettlement(it, settlement)
     }
-    suspend fun deleteSettlement(id: String) = mutate { BookActions.deleteSettlement(it, id) }
+    suspend fun saveDirectSettlement(settlement: Settlement, friendId: String) = mutate { BookActions.saveDirectSettlement(it, settlement, friendId) }
+    suspend fun deleteSettlement(id: String, original: Settlement? = null) = mutate {
+        val current = requireNotNull(it.settlements.find { value -> value.id == id }) { "Repayment no longer exists." }
+        require(original == null || it.sharedGroups.none { link -> link.groupId == current.groupId } || current == original) { "This repayment changed on another phone. Review the latest version before deleting it." }
+        BookActions.deleteSettlement(it, id)
+    }
     suspend fun comment(expense: Expense, text: String, authorId: String = "self") = mutate { BookActions.comment(it, expense.id, text, authorId) }
     suspend fun saveComment(comment: Comment) = mutate { BookActions.saveComment(it, comment) }
     suspend fun ensureDirectGroup(personId: String): Result<String> {
         var resultId = ""
         return mutate { current -> BookActions.directGroup(current, personId).let { resultId = it.second; it.first } }.map { resultId }
+    }
+    suspend fun ensureNonGroupLedger(participantIds: Set<String>): Result<String> {
+        var resultId = ""
+        return mutate { current -> BookActions.nonGroupLedger(current, participantIds).let { resultId = it.second; it.first } }.map { resultId }
+    }
+    suspend fun saveNonGroupExpense(expense: Expense, participantIds: Set<String>) = mutate { BookActions.saveNonGroupExpense(it, expense, participantIds) }
+    suspend fun addGroupMembers(groupId: String, personIds: Set<String>): Result<Unit> {
+        if (book.value?.sharedGroups?.any { it.groupId == groupId } == true) return cloud.addMembers(groupId, personIds)
+        return mutate { current ->
+            val group = requireNotNull(current.groups.find { it.id == groupId }) { "Group no longer exists." }
+            BookActions.saveGroup(current, group.copy(members = (group.members + personIds.sorted()).distinct()))
+        }
     }
     suspend fun resetBook(): Result<Unit> = commandMutex.withLock {
         mutableSaving.value = true
@@ -90,6 +107,9 @@ class KitnaViewModel(application: Application) : AndroidViewModel(application) {
         catch (failure: Exception) { Result.failure(failure) }
         finally { mutableFileTransferBusy.value = false }
     }
-    fun receiveCloudIntent(uri: Uri) { viewModelScope.launch { book.filterNotNull().first(); cloud.receive(uri) } }
+    fun receiveCloudIntent(uri: Uri) {
+        if (app.kitna.data.InvitationLinks.parse(uri) != null) cloud.receive(uri)
+        else viewModelScope.launch { book.filterNotNull().first(); cloud.receive(uri) }
+    }
     // The process runtime also serves Android's scheduled sync jobs.
 }

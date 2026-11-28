@@ -14,8 +14,8 @@ android {
         applicationId = "app.kitna"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 8
+        versionName = "0.7.1"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -30,6 +30,10 @@ android {
     defaultConfig {
         buildConfigField("String", "SUPABASE_URL", "\"${localSettings.getProperty("kitna.supabaseUrl", "")}\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"${localSettings.getProperty("kitna.supabasePublishableKey", "")}\"")
+        val inviteHost = localSettings.getProperty("kitna.inviteHost", "").trim().lowercase()
+        require(inviteHost.isEmpty() || inviteHost.matches(Regex("[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?\\.[a-z]{2,}"))) { "kitna.inviteHost must be an HTTPS hostname." }
+        buildConfigField("String", "INVITE_HOST", "\"$inviteHost\"")
+        manifestPlaceholders["kitnaInviteHost"] = inviteHost.ifEmpty { "kitna-links.invalid" }
     }
     localSettings.getProperty("kitna.signingStore")?.let { keyPath ->
         signingConfigs.getByName("debug") {

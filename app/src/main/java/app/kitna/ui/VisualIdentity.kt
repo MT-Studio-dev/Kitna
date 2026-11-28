@@ -37,6 +37,9 @@ internal fun groupColor(key: String): Color = Color(
     GroupAppearance.colors[key] ?: GroupAppearance.colors.getValue("teal")
 )
 
+/** Black/white choose the stronger text contrast while preserving each saved group color. */
+internal fun groupInk(fill: Color): Color = if (fill.luminance() > .179f) Color.Black else Color.White
+
 /** Individual symbols stay code-native and sharp at every Android density. */
 @Composable internal fun GroupSymbol(
     icon: String,
@@ -48,7 +51,7 @@ internal fun groupColor(key: String): Color = Color(
 
 @Composable internal fun GroupStylePreview(icon: String, color: String, size: Int = 56) {
     val fill = groupColor(color)
-    val ink = if (fill.luminance() > .42f) Color(0xFF173A31) else Color.White
+    val ink = groupInk(fill)
     Box(
         Modifier.size(size.dp)
             .clip(RoundedCornerShape((size / 4).dp))
@@ -67,17 +70,36 @@ internal fun groupColor(key: String): Color = Color(
 
 @Composable internal fun GroupHeader(group: Group, description: String) {
     val fill = groupColor(group.color)
-    val ink = if (fill.luminance() > .42f) Color(0xFF173A31) else Color.White
+    val ink = groupInk(fill)
     Column(Modifier.fillMaxWidth().background(fill).drawBehind {
         val w=size.width;val h=size.height
-        drawPath(Path().apply { moveTo(w*.42f,0f);lineTo(w,h*.5f);lineTo(w*.7f,h);lineTo(w*.1f,h);close() },Color.White.copy(alpha=.05f))
-        drawPath(Path().apply { moveTo(w*.7f,0f);lineTo(w*.3f,h);lineTo(w,h);close() },Color.Black.copy(alpha=.08f))
+        // Diagonal manga shades increase contrast with the chosen ink rather than washing it out.
+        val shade = if (ink == Color.White) Color.Black else Color.White
+        drawPath(Path().apply { moveTo(w*.42f,0f);lineTo(w,h*.5f);lineTo(w*.7f,h);lineTo(w*.1f,h);close() },shade.copy(alpha=.05f))
+        drawPath(Path().apply { moveTo(w*.7f,0f);lineTo(w*.3f,h);lineTo(w,h);close() },shade.copy(alpha=.08f))
     }.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         GroupSymbol(group.icon,Modifier.size(34.dp),ink)
         Text(group.name,style=MaterialTheme.typography.headlineLarge,color=ink)
         Text("${group.kind} · ${group.members.size} people",style=MaterialTheme.typography.bodyMedium,color=ink)
-        Text(description,style=MaterialTheme.typography.bodySmall,color=ink.copy(alpha=.85f),maxLines=2)
+        Text(description,style=MaterialTheme.typography.bodySmall,color=ink,maxLines=2)
     }
+}
+
+internal fun categoryAppearance(category: String, dark: Boolean): Pair<String, Color> {
+    val (symbol, base) = when (category.lowercase()) {
+        "food", "food and drinks" -> "food" to Color(0xFFB12F5A)
+        "groceries" -> "groceries" to Color(0xFF246647)
+        "travel", "transport", "transportation" -> "car" to Color(0xFF245FAD)
+        "rent" -> "home" to Color(0xFF6846A8)
+        "accommodation" -> "home" to Color(0xFF4163AA)
+        "entertainment" -> "ticket" to Color(0xFF9B3F97)
+        "utilities" -> "bolt" to Color(0xFF3457A4)
+        "shopping" -> "shopping" to Color(0xFF7851AE)
+        "health" -> "health" to Color(0xFFB4234A)
+        "other" -> "receipt" to Color(0xFF526681)
+        else -> "receipt" to Color(0xFF007561)
+    }
+    return symbol to if (dark) lerp(base, Color.White, .4f) else base
 }
 
 @Composable internal fun CategoryIcon(
@@ -85,20 +107,8 @@ internal fun groupColor(key: String): Color = Color(
     modifier: Modifier = Modifier,
     size: Int = 40
 ) {
-    val (symbol, base) = when (category.lowercase()) {
-        "food" -> "food" to Color(0xFFBE5B25)
-        "groceries" -> "groceries" to Color(0xFF4F7D38)
-        "travel", "transport" -> "car" to Color(0xFF2872B7)
-        "rent" -> "home" to Color(0xFF7A58AC)
-        "entertainment" -> "ticket" to Color(0xFFAF467A)
-        "utilities" -> "bolt" to Color(0xFF9C730C)
-        "shopping" -> "shopping" to Color(0xFFAD5F3D)
-        "health" -> "health" to Color(0xFFBA4A52)
-        "other" -> "receipt" to Color(0xFF657476)
-        else -> "receipt" to Color(0xFF16826D)
-    }
     val dark = MaterialTheme.colorScheme.surface.luminance() < .3f
-    val ink = if (dark) lerp(base, Color.White, .4f) else base
+    val (symbol, ink) = categoryAppearance(category, dark)
     Box(
         modifier.size(size.dp)
             .clip(RoundedCornerShape((size / 4).dp))

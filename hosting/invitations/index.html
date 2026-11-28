@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow"><title>Invitation to Kitna</title>
+<style>:root{color-scheme:light dark;font-family:system-ui,sans-serif}body{max-width:32rem;margin:10vh auto;padding:24px;background:light-dark(#fff9ed,#191916);color:light-dark(#24231f,#fff9ed)}h1{font-size:2rem}a,button{display:inline-block;box-sizing:border-box;min-height:48px;padding:12px 20px;border:2px solid currentColor;background:light-dark(#f1b64c,#dca344);color:#24231f;font:inherit;border-radius:4px;cursor:pointer}input{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:16px 0}p{line-height:1.6}[hidden]{display:none!important}</style>
+<h1>You're invited to Kitna</h1><p id="message">Open Kitna to review and accept your invitation.</p><div id="valid" hidden><a id="open">Open Kitna</a><p>Need to install Kitna? Get the app from MT Studio, then reopen this original link. For a group invitation, you can also enter this code in Groups → Join group.</p><label for="code">Invitation code</label><input id="code" readonly><button id="copy">Copy code</button></div>
+<script>
+'use strict';
+const parts=location.pathname.split('/').filter(Boolean);
+let kind='',token='';
+try{if(parts.length===3&&parts[0]==='invite'&&['group','friend'].includes(parts[1])){kind=parts[1];token=decodeURIComponent(parts[2]);}}catch{}
+if(!/^[A-Za-z0-9_-]{12,300}$/.test(token)){document.getElementById('message').textContent='This invitation link is incomplete. Ask your friend to share it again.';}
+else{document.getElementById('valid').hidden=false;document.getElementById('open').href='app.kitna://'+(kind==='group'?'join':'friend')+'?token='+encodeURIComponent(token);document.getElementById('code').value=token;document.getElementById('copy').onclick=async()=>{try{await navigator.clipboard.writeText(token);document.getElementById('copy').textContent='Copied';}catch{document.getElementById('code').select();}};}
+</script></html>

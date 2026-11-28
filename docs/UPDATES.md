@@ -1,5 +1,9 @@
 # Updating Kitna without losing records
 
+Version 0.7.1 uses code 8 and the same package/signing identity. It refreshes the palette and repayment interface without changing Room schema or stored financial amounts. Install over the existing application.
+
+v0.7 keeps `app.kitna`, the established development signing configuration, Room schema 1 and existing receipt paths. Phone/account identity fields have compatible empty defaults. Hidden non-group ledgers use the existing aggregate format. Historical identity connections rewrite local references atomically and refuse ambiguous shared participant merges. No destructive migration/reset is used.
+
 Install a newer Kitna APK **over the installed app**. Android keeps an app's private data during a normal package update when the application ID and signing certificate remain the same. Kitna continues using application ID `app.kitna`, the same `kitna.db` file, and Room database schema version 1.
 
 New fields have backward-compatible defaults. Existing groups receive the default group icon and teal color until you choose another style, and start without a budget. Older expenses start without receipt attachments. Stored expense categories, dates, notes, allocations, payments, comments, deleted records and edit history are loaded without being recategorized or replaced. Private receipt files remain in the same installation. The category suggestion helper only changes an expense when its editor's auto-categorization is enabled.

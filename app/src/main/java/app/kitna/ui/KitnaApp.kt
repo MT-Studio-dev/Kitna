@@ -17,7 +17,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
@@ -61,14 +60,16 @@ import java.time.LocalDate
     var erase by remember{mutableStateOf(false)}
     var logout by remember{mutableStateOf(false)}
     var duplicateExpense by rememberSaveable{mutableStateOf(false)}
+    var createdGroupOptions by rememberSaveable{mutableStateOf(false)}
     val scope=rememberCoroutineScope();val context=LocalContext.current;val snackbar=remember{SnackbarHostState()}
     val onboardingPreferences=remember(context){context.getSharedPreferences("onboarding",android.content.Context.MODE_PRIVATE)}
     var onboarding by rememberSaveable{mutableStateOf(!onboardingPreferences.getBoolean("complete",false))}
     var onboardingError by rememberSaveable{mutableStateOf<String?>(null)}
+    var onboardingBusy by remember{mutableStateOf(false)}
     fun finishOnboarding(){onboardingPreferences.edit().putBoolean("complete",true).apply();onboarding=false}
     LaunchedEffect(book){val loaded=book;if(loaded!=null&&(loaded.people.size>1||loaded.groups.isNotEmpty()||loaded.people.firstOrNull{it.id=="self"}?.name!="You"))finishOnboarding()}
-    LaunchedEffect(cloud.pendingInvite){if(cloud.pendingInvite!=null){finishOnboarding();returnRoute="main";groupId=null;route="shared"}}
-    LaunchedEffect(cloud.openGroupId, book != null) { cloud.openGroupId?.let { id -> if (book != null) { if (book?.groups?.any { it.id == id } == true) { finishOnboarding();tab="Groups";groupId=id;route="group";query="";search=false };vm.cloud.clearGroupNavigation() } } }
+    LaunchedEffect(cloud.pendingInvite,route){if(cloud.pendingInvite!=null&&route !in setOf("expenseEdit","groupEdit","friendEdit","settlementEdit","invitation")){finishOnboarding();returnRoute="main";groupId=null;route="invitation"}}
+    LaunchedEffect(cloud.openGroupId, book != null) { cloud.openGroupId?.let { id -> if (book != null) { if (book?.groups?.any { it.id == id } == true) { finishOnboarding();tab="Groups";groupId=id;val opened=book?.groups?.find{it.id==id};if(opened?.kind=="Direct"){personId=opened.members.firstOrNull{it!="self"};tab="Friends";route="friend"}else route="group";query="";search=false };vm.cloud.clearGroupNavigation() } } }
     val backups=remember(vm.store){BookBackup(context.applicationContext,vm.store)}
     val searchFocus=remember{FocusRequester()}
     val keyboard=LocalSoftwareKeyboardController.current
@@ -101,16 +102,19 @@ import java.time.LocalDate
         if(b==null)Column(Modifier.fillMaxSize().safeDrawingPadding(),horizontalAlignment=androidx.compose.ui.Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
             if(error==null){CircularProgressIndicator();Text("Opening your records…",Modifier.padding(20.dp))}
             else{Text("Your records could not be opened",style=MaterialTheme.typography.titleLarge);Text(error!!,Modifier.padding(24.dp));OutlinedButton({vm.retryLoad()}){Text("Retry opening records")};OutlinedButton({restore()}){Text("Restore a backup")}}
-        }else if(onboarding)OnboardingScreen(onComplete={name->scope.launch{vm.renameSelf(name).onSuccess{finishOnboarding()}.onFailure{onboardingError=it.message}}},onSignIn={finishOnboarding();groupId=null;edit("shared","main")},error=onboardingError)
+        }else if(onboarding)OnboardingScreen(onComplete={name->if(!onboardingBusy){onboardingBusy=true;scope.launch{try{vm.renameSelf(name).onSuccess{finishOnboarding()}.onFailure{onboardingError=it.message}}finally{onboardingBusy=false}}}},onSignIn={if(!onboardingBusy){onboardingBusy=true;scope.launch{try{vm.cloud.beginSignIn().onSuccess{url->runCatching{context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}.onSuccess{finishOnboarding()}.onFailure{onboardingError="Enable a browser to continue with Google."}}.onFailure{onboardingError=it.message}}finally{onboardingBusy=false}}}},busy=onboardingBusy,error=onboardingError)
         else when(route){
+            "invitation"->InvitationScreen(vm,onClose={route="main"},onFriendAccepted={tab="Friends";route="main"})
+            "addFriends"->AddFriendsScreen(b,vm,onClose={route=returnRoute},onAccount={edit("shared","addFriends")})
+            "addMembers"->AddFriendsScreen(b,vm,group=b.groups.find{it.id==groupId},onClose={route=returnRoute},onAccount={edit("shared","addMembers")})
             "shared"->SharedAccountScreen(b,vm,groupId){route=if(returnRoute=="group"&&vm.book.value?.groups?.none{it.id==groupId}==true)"main" else returnRoute}
             "groupSettings"->{ val selected=b.groups.find{it.id==groupId}; if(selected!=null)GroupSettingsScreen(b,selected,vm,onEdit={edit("groupEdit","groupSettings")},onMembers={edit("shared","groupSettings")},onBack={route=if(vm.book.value?.groups?.any{it.id==groupId}==true)"group" else "main"}) else LaunchedEffect(Unit){route="main"} }
             "settings"->SettingsScreen(theme,onTheme,onCsv={exportCsv.launch("kitna-expenses-${LocalDate.now()}.csv")},onBackup={exportBackup.launch("kitna-backup-${LocalDate.now()}.zip")},onRestore={restore()},onTrash={route="trash"},onClear={erase=true},onBack={route="main"},onNotifications={route="notifications"})
             "notifications"->NotificationSettingsScreen { route="settings" }
             "about"->AboutScreen(onBack={route=returnRoute})
             "help"->HelpScreen(onBack={route=returnRoute},syncStatus=if(cloud.session==null)"Local records" else "Google account connected · ${b.pendingChanges.size} pending changes",onShowOnboarding={onboarding=true})
-            "expenseEdit"->ExpenseEditor(b,b.expenses.find{it.id==expenseId},groupId,vm,duplicate=duplicateExpense){route=returnRoute}
-            "groupEdit"->GroupEditor(b,b.groups.find{it.id==groupId},vm,onCreated={id,share->groupId=id;tab="Groups";route="group";query="";filter=ExpenseFilter();if(share)scope.launch{vm.cloud.shareGroup(id).onFailure{snackbar.showSnackbar(it.message?:"Group saved. Open Members to retry sharing.")}}}){route=if(returnRoute=="group"&&vm.book.value?.groups?.none{it.id==groupId}!=false)"main" else returnRoute}
+            "expenseEdit"->ExpenseEditor(b,b.expenses.find{it.id==expenseId},groupId,vm,duplicate=duplicateExpense,onSaved={scope.launch{snackbar.showSnackbar("Expense saved")}}){route=returnRoute}
+            "groupEdit"->GroupEditor(b,b.groups.find{it.id==groupId},vm,onCreated={id,share->groupId=id;tab="Groups";route="group";query="";filter=ExpenseFilter();createdGroupOptions=true}){route=if(returnRoute=="group"&&vm.book.value?.groups?.none{it.id==groupId}!=false)"main" else returnRoute}
             "friendEdit"->PersonEditor(b,b.people.find{it.id==personId},vm){route=if(returnRoute=="friend"&&vm.book.value?.people?.none{it.id==personId}!=false)"main" else returnRoute}
             "settlementEdit"->{
                 val pair=if(returnRoute=="friend")b.groups.find{it.id==groupId}?.let{Accounting.transfers(b,it.id)}?.firstOrNull{(it.from=="self"&&it.to==personId)||(it.to=="self"&&it.from==personId)}else null
@@ -126,22 +130,21 @@ import java.time.LocalDate
                 val group=b.groups.find{it.id==groupId};val friend=b.people.find{it.id==personId};val main=route=="main"
                 BackHandler(!main){route="main";query="";filter=ExpenseFilter()}
                 BackHandler(main&&search){search=false;query="";keyboard?.hide()}
-                val title=when(route){"group"->"";"friend"->friend?.name?:"Friend";"reports"->"Spending insights";"trash"->"Recently deleted";else->if(search)"Search" else tab}
+                val title=when(route){"group"->"";"friend"->friend?.name?:"Friend";"nonGroup"->"Non-group expenses";"reports"->"Spending insights";"trash"->"Recently deleted";else->if(search)"Search" else tab}
                 val balances=Accounting.friendBalances(b)
                 Scaffold(containerColor=MaterialTheme.colorScheme.background,snackbarHost={SnackbarHost(snackbar)},topBar={Column{
-                    TopAppBar(colors=TopAppBarDefaults.topAppBarColors(containerColor=if(route=="group"&&group!=null)groupColor(group.color) else MaterialTheme.colorScheme.background,navigationIconContentColor=if(route=="group"&&group!=null&&groupColor(group.color).luminance()<=.42f)androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface,actionIconContentColor=if(route=="group"&&group!=null&&groupColor(group.color).luminance()<=.42f)androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface),title={Text(title,fontWeight=FontWeight.Medium,fontSize=23.sp)},navigationIcon={if(!main)ActionIcon("back","Back"){route="main";query="";filter=ExpenseFilter()}else if(search)ActionIcon("back","Close search"){search=false;query="";keyboard?.hide()}},actions={
+                    TopAppBar(colors=TopAppBarDefaults.topAppBarColors(containerColor=if(route=="group"&&group!=null)groupColor(group.color) else MaterialTheme.colorScheme.background,navigationIconContentColor=if(route=="group"&&group!=null)groupInk(groupColor(group.color)) else MaterialTheme.colorScheme.onSurface,actionIconContentColor=if(route=="group"&&group!=null)groupInk(groupColor(group.color)) else MaterialTheme.colorScheme.onSurface),title={Text(title,fontWeight=FontWeight.Medium,fontSize=23.sp)},navigationIcon={if(!main)ActionIcon("back","Back"){route="main";query="";filter=ExpenseFilter()}else if(search)ActionIcon("back","Close search"){search=false;query="";keyboard?.hide()}},actions={
                         if(route in listOf("group","friend")||(main&&tab!="Account"))ActionIcon("search","Search"){search=!search;if(!search)query=""}
                         if(route=="group")ActionIcon("settings","Group settings"){edit("groupSettings")}
                         else if(route=="friend")ActionIcon("edit","Edit friend"){edit("friendEdit")}
-                        else if(main&&tab in listOf("Friends","Groups"))ActionIcon("add",if(tab=="Friends")"Add friend" else "Create group"){if(tab=="Friends"){personId=null;edit("friendEdit")}else{groupId=null;edit("groupEdit")}}
+                        else if(main&&tab in listOf("Friends","Groups"))ActionIcon("add",if(tab=="Friends")"Add friend" else "Create group"){if(tab=="Friends"){personId=null;edit("addFriends")}else{groupId=null;edit("groupEdit")}}
                     })
                     if(search&&route!="reports")OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=4.dp).focusRequester(searchFocus),label={Text(if(main)"Search all records" else "Search expenses")},placeholder={Text("Expense, category, person or amount")},singleLine=true,leadingIcon={Glyph("search")},trailingIcon={if(query.isNotEmpty())ActionIcon("close","Clear search"){query=""}},keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={keyboard?.hide()}))
                 }},bottomBar={if(main||route in listOf("group","friend"))NavigationBar(containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp){listOf("Groups","Friends","Activity","Account").forEach{name->NavigationBarItem(selected=tab==name,onClick={tab=name;route="main";query="";search=false;filter=ExpenseFilter()},icon={Glyph(name.lowercase(),color=if(tab==name)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)},label={Text(name)},colors=NavigationBarItemDefaults.colors(indicatorColor=androidx.compose.ui.graphics.Color.Transparent,selectedIconColor=MaterialTheme.colorScheme.primary,selectedTextColor=MaterialTheme.colorScheme.primary))}}},floatingActionButton={
-                    if((main&&tab in listOf("Friends","Groups"))||route=="friend"||(route=="group"&&group?.archived==false))ExtendedFloatingActionButton(onClick={scope.launch{
-                        if(b.people.size<2){personId=null;edit("friendEdit")}
-                        else if(route=="friend"&&personId!=null){groupId=b.groups.firstOrNull{it.kind=="Direct"&&personId in it.members}?.id?:"friend:$personId";expenseId=null;edit("expenseEdit")}
-                        else{if(main)groupId=null;expenseId=null;edit("expenseEdit")}
-                    }},containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary,icon={Glyph("add",color=MaterialTheme.colorScheme.onPrimary)},text={Text(if(b.people.size<2)"Add friend" else "Add expense")})
+                    if((main&&tab in listOf("Friends","Groups"))||route in listOf("friend","nonGroup")||(route=="group"&&group?.archived==false))ExtendedFloatingActionButton(onClick={scope.launch{
+                        if(route=="friend"&&personId!=null){groupId=b.groups.firstOrNull{it.kind=="Direct"&&personId in it.members}?.id?:"friend:$personId";expenseId=null;edit("expenseEdit")}
+                        else{if(main||route=="nonGroup")groupId=null;expenseId=null;edit("expenseEdit")}
+                    }},containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary,icon={Glyph("add",color=MaterialTheme.colorScheme.onPrimary)},text={Text("Add expense")})
                 }){padding->
                     val filtered=b.expenses.filter{e->!e.deleted&&(route!="group"||e.groupId==groupId)&&(route!="friend"||personId in (e.payers.keys+e.shares.keys))&&filter.matches(b,e,query)}.sortedByDescending{it.date}
                     LazyColumn(Modifier.fillMaxSize().padding(padding),contentPadding=PaddingValues(bottom=100.dp)){
@@ -153,6 +156,15 @@ import java.time.LocalDate
                                 if(b.expenses.none{it.deleted}&&b.settlements.none{it.deleted})item{EmptyState("Nothing in the bin","Your deleted records will appear here.")}
                                 items(b.expenses.filter{it.deleted},key={"expense:${it.id}"}){e->ListItem(headlineContent={Text(e.description)},supportingContent={Text("${b.groupName(e.groupId)} · ${money(e.amount)}")},trailingContent={TextButton({scope.launch{notify(vm.restoreExpense(e.id),"Expense restored")}}){Text("Restore")}})}
                                 items(b.settlements.filter{it.deleted},key={"settlement:${it.id}"}){s->ListItem(headlineContent={Text("${b.personName(s.from)} paid ${b.personName(s.to)}")},supportingContent={Text(money(s.amount))},trailingContent={TextButton({scope.launch{notify(vm.saveSettlement(s.copy(deleted=false)),"Repayment restored")}}){Text("Restore")}})}
+                            }
+                            route=="nonGroup"->{
+                                item{Text("Bills with friends and personal expenses",Modifier.padding(20.dp),color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                                val ledgers=b.groups.filter{it.isNonGroup&&b.expenses.any{e->e.groupId==it.id&&!e.deleted}}
+                                if(ledgers.isEmpty())item{EmptyState("Split a bill with friends","Choose friends when adding an expense. A group is optional.")}
+                                ledgers.forEach{ledger->
+                                    item(key="ledger:${ledger.id}"){ListItem(headlineContent={Text(if(ledger.members.size==1)"Personal expenses" else ledger.members.filter{it!="self"}.joinToString{b.personName(it)})},supportingContent={Text("No group")},trailingContent={if(ledger.members.size>1)ActionIcon("share","Share expenses"){groupId=ledger.id;edit("shared","nonGroup")}})}
+                                    expenseRows(b,filtered.filter{it.groupId==ledger.id},::detail,keyPrefix="ledger:${ledger.id}:")
+                                }
                             }
                             route=="group"||route=="friend"->{
                                 item{
@@ -172,6 +184,7 @@ import java.time.LocalDate
                                         if(group.budget!=null)TripBudgetCard(b,group){edit("groupEdit")}
                                         if(b.expenses.none{it.groupId==group.id&&!it.deleted})GroupInviteCard(b,group,vm){edit("shared")}
                                     }
+                                    if(route=="friend")TextButton({scope.launch{vm.ensureDirectGroup(personId.orEmpty()).onSuccess{groupId=it;edit("shared","friend")}.onFailure{snackbar.showSnackbar(it.message?:"Could not open expenses")}}},Modifier.padding(horizontal=16.dp).heightIn(min=48.dp)){Text("Share expenses with ${friend?.name?:"friend"}")}
                                     FilterBar(filtered.size,filter.active){filters=true}
                                 }
                                 expenseRows(b,filtered,::detail)
@@ -180,17 +193,17 @@ import java.time.LocalDate
                                 items(payments,key={"payment:${it.id}"}){s->ListItem(modifier=Modifier.clickable{settlementId=s.id;edit("settlementEdit")},headlineContent={Text("${b.personName(s.from)} paid ${b.personName(s.to)}")},supportingContent={Text("${s.date} · ${s.method}")},trailingContent={Text(money(s.amount),color=Owed)},leadingContent={Glyph("check",color=Owed)})}
                             }
                             tab=="Friends"->{
-                                item{OverallSummary(balances)}
+                                item{OverallSummary(balances);Row{TextButton({personId=null;edit("addFriends")},Modifier.padding(horizontal=16.dp).heightIn(min=48.dp)){Glyph("add",color=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text("Add friends")};TextButton({groupId=null;route="nonGroup"},Modifier.heightIn(min=48.dp)){Text("Non-group expenses")}}}
                                 val people=b.people.filter{it.id!="self"&&it.name.contains(query,true)}.sortedBy{it.name.lowercase()}
-                                if(people.isEmpty())item{EmptyState("Keep money simple","Add a friend to track what you owe each other.","Add a friend"){personId=null;edit("friendEdit")}}
-                                items(people,key={it.id}){p->val count=b.groups.count{it.kind!="Direct"&&p.id in it.members};ListItem(modifier=Modifier.clickable{personId=p.id;groupId=null;route="friend";query="";filter=ExpenseFilter()},leadingContent={Avatar(p.name)},headlineContent={Text(p.name,fontWeight=FontWeight.Medium)},supportingContent={Text(if(count==0)"Direct expenses" else if(count==1)"1 shared group" else "$count shared groups",fontSize=12.sp)},trailingContent={BalanceText(balances[p.id]?:0)});HorizontalDivider(Modifier.padding(start=80.dp),thickness=0.5.dp)}
+                                if(people.isEmpty())item{EmptyState("Keep money simple","Add a friend to track what you owe each other.","Add friends"){personId=null;edit("addFriends")}}
+                                items(people,key={it.id}){p->val net=balances[p.id]?:0;val pending=cloud.friendInvitations.any{!it.incoming&&it.status=="pending"&&it.email.isNotEmpty()&&it.email.equals(p.email,true)};ListItem(modifier=Modifier.clickable{personId=p.id;groupId=null;route="friend";query="";filter=ExpenseFilter()},leadingContent={Avatar(p.name)},headlineContent={Text(p.name,fontWeight=FontWeight.Medium)},supportingContent={Text((if(net<0)"You owe ${p.name} ${money(-net)}" else if(net>0)"${p.name} owes you ${money(net)}" else "Settled up")+if(pending)" · Invited" else "",style=MaterialTheme.typography.bodyMedium)},trailingContent={Glyph("chevron")});HorizontalDivider(Modifier.padding(start=80.dp),thickness=0.5.dp)}
                             }
                             tab=="Groups"->{
                                 item{OverallSummary(balances);Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Text("Your groups",Modifier.weight(1f),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);TextButton({groupId=null;edit("shared")}){Text("Join group")};FilterChip(archived,{archived=!archived},label={Text("Show archived")})}}
-                                val groups=b.groups.filter{it.kind!="Direct"&&(archived||!it.archived)&&it.name.contains(query,true)}.sortedBy{it.name.lowercase()}
+                                val groups=b.groups.filter{!it.isNonGroup&&(archived||!it.archived)&&it.name.contains(query,true)}.sortedBy{it.name.lowercase()}
                                 if(groups.isEmpty())item{EmptyState("Life's better together","Trips, home, dinner plans — keep every shared expense in a group.","Start a group"){groupId=null;edit("groupEdit")}}
                                 items(groups,key={it.id}){g->GroupListRow(b,g){groupId=g.id;route="group";query="";filter=ExpenseFilter()}}
-                                item{TextButton({groupId=null;query="";filter=ExpenseFilter();route="reports"},Modifier.padding(12.dp)){Glyph("report",color=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text("View spending insights")}}
+                                item{TextButton({groupId=null;query="";filter=ExpenseFilter();route="nonGroup"},Modifier.padding(horizontal=12.dp)){Text("Non-group expenses")};TextButton({groupId=null;query="";filter=ExpenseFilter();route="reports"},Modifier.padding(12.dp)){Glyph("report",color=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(8.dp));Text("View spending insights")}}
                             }
                             tab=="Activity"->{
                                 val activity=b.activity.filter{it.message.contains(query,true)||b.groupName(it.groupId).contains(query,true)}.asReversed()
@@ -207,6 +220,7 @@ import java.time.LocalDate
         }
     }
     if(filters&&b!=null)FiltersDialog(b,filter,{filter=it}){filters=false}
+    if(createdGroupOptions&&b!=null)ModalBottomSheet(onDismissRequest={createdGroupOptions=false}){Column(Modifier.fillMaxWidth().padding(24.dp).navigationBarsPadding(),verticalArrangement=Arrangement.spacedBy(12.dp)){Text("${b.groupName(groupId.orEmpty())} is ready",style=MaterialTheme.typography.titleLarge);Button({createdGroupOptions=false;edit("addMembers","group")},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Add friends")};OutlinedButton({createdGroupOptions=false;edit("shared","group")},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Share invite link")};TextButton({createdGroupOptions=false},Modifier.fillMaxWidth().heightIn(min=48.dp)){Text("Skip for now")}}}
     if(balanceSheet&&b!=null)BalancesSheet(b,if(route=="group")b.groups.filter{it.id==groupId}else b.groups.filter{personId in it.members},onDismiss={balanceSheet=false},onSettle={group->balanceSheet=false;groupId=group.id;settlementId=null;edit("settlementEdit")})
     if(logout)AlertDialog(onDismissRequest={logout=false},title={Text("Log out of Kitna?")},text={Text("Sync or discard pending changes first. Shared groups will be available when you sign in again; your local groups remain on this phone.")},confirmButton={TextButton({logout=false;scope.launch{vm.cloud.signOut().onSuccess{clearNavigation();snackbar.showSnackbar("Logged out")}.onFailure{snackbar.showSnackbar(it.message?:"Could not log out")}}}){Text("Log out")}},dismissButton={TextButton({logout=false}){Text("Cancel")}})
     if(restoreUri!=null)AlertDialog(onDismissRequest={restoreUri=null},title={Text("Replace your local records?")},text={Text("This replaces your local book with the selected ZIP or JSON backup. Shared groups on the server stay unchanged. Sign out before restoring, and save a complete backup first if you need to keep current records and photos.")},confirmButton={TextButton({val selected=Uri.parse(restoreUri!!);restoreUri=null;scope.launch{vm.fileTransfer{require(cloud.session==null){"Sign out in Shared groups before restoring. Backups restore local records; they do not replace live server groups."};restoreSelectedBackup(context,vm.store,selected)}.onSuccess{clearNavigation();snackbar.showSnackbar("Backup restored")}.onFailure{reportFailure(it,"Restore failed")}}}){Text("Restore backup")}},dismissButton={TextButton({restoreUri=null}){Text("Cancel")}})

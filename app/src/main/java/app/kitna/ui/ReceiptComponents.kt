@@ -2,6 +2,7 @@ package app.kitna.ui
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -30,12 +31,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
 import app.kitna.core.ReceiptPhoto
 import app.kitna.data.ReceiptStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable fun ReceiptAttachmentPanel(
     photos: List<ReceiptPhoto>,
@@ -49,17 +52,39 @@ import kotlinx.coroutines.withContext
     var importing by remember { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var removingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var cameraFile by rememberSaveable { mutableStateOf<String?>(null) }
     val reportBusy by rememberUpdatedState(onBusyChange)
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
+    val currentPhotos by rememberUpdatedState(photos)
+    val reportPhotos by rememberUpdatedState(onPhotosChange)
+    fun import(uri: Uri, cleanup: File? = null) {
+        scope.launch {
             importing = true; reportBusy(true); error = null
             try {
-                require(photos.size < 10) { "An expense can have up to ten receipt photos." }
+                require(currentPhotos.size < 10) { "An expense can have up to ten receipt photos." }
                 val photo = storage.importPhoto(uri)
-                onPhotosChange(photos + photo)
+                reportPhotos(currentPhotos + photo)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { error = failure.message ?: "Could not attach this photo." }
-            finally { importing = false; reportBusy(false) }
+            finally { cleanup?.delete(); cameraFile = null; importing = false; reportBusy(false) }
+        }
+    }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) import(uri)
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val source = cameraFile?.let(::File)
+        if (success && source != null) import(FileProvider.getUriForFile(context, "${context.packageName}.receipts", source), source)
+        else { source?.delete(); cameraFile = null }
+    }
+    fun takePhoto() {
+        runCatching {
+            val folder = File(context.cacheDir, "receipt-camera").apply { mkdirs() }
+            val target = File.createTempFile("receipt-", ".jpg", folder)
+            cameraFile = target.absolutePath
+            camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.receipts", target))
+        }.onFailure {
+            cameraFile?.let(::File)?.delete(); cameraFile = null
+            error = "Could not open a camera. Choose an existing receipt photo instead."
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -68,6 +93,7 @@ import kotlinx.coroutines.withContext
         OutlinedButton(onClick = { launcher.launch(arrayOf("image/*")) }, enabled = enabled && !importing && photos.size < 10, modifier = Modifier.fillMaxWidth()) {
             Text(if (importing) "Attaching photo…" else "Attach receipt photo")
         }
+        OutlinedButton(onClick = { takePhoto() }, enabled = enabled && !importing && photos.size < 10, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Take receipt photo") }
         Text("A private JPEG copy is kept with your records. Complete ZIP backups include receipt photos and their history.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }

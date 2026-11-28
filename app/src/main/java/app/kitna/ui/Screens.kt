@@ -19,6 +19,8 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.heading
@@ -66,28 +68,42 @@ internal data class ExpenseFilter(val category:String="All categories",val perso
 }
 @Composable internal fun FilterBar(count:Int,active:Boolean,onFilter:()->Unit){Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically){Text("$count expenses",Modifier.weight(1f),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);TextButton(onFilter){Glyph("filter",color=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(6.dp));Text(if(active)"Filters applied" else "Filters")}}}
 @Composable internal fun SectionLabel(title:String){Text(title,Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=16.dp).semantics{heading()},style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurface)}
-internal fun LazyListScope.expenseRows(book:Book,expenses:List<Expense>,onClick:(Expense)->Unit,showGroup:Boolean=false){
+internal fun LazyListScope.expenseRows(book:Book,expenses:List<Expense>,onClick:(Expense)->Unit,showGroup:Boolean=false,keyPrefix:String=""){
     val settings=book.groups.associateBy{it.id}
     val largest=book.expenses.filterNot{it.deleted}.groupBy{it.groupId}.mapValues{(_,rows)->rows.maxOfOrNull{it.amount}?:0L}
     if(expenses.isEmpty())item{EmptyState("No expenses yet","Record a shared expense, or adjust your search and filters.")}
     expenses.groupBy{it.date.take(7)}.forEach{(month,rows)->
-        item(key="month:$month"){SectionLabel(runCatching{LocalDate.parse("$month-01").format(DateTimeFormatter.ofPattern("MMMM yyyy"))}.getOrDefault(month))}
-        items(rows,key={"expense:${it.id}"}){e->
+        item(key="${keyPrefix}month:$month"){SectionLabel(runCatching{LocalDate.parse("$month-01").format(DateTimeFormatter.ofPattern("MMMM yyyy"))}.getOrDefault(month))}
+        items(rows,key={"${keyPrefix}expense:${it.id}"}){e->
             val net=(e.payers["self"]?:0)-(e.shares["self"]?:0)
             val emphasis=expenseEmphasis(e.amount,settings[e.groupId]?.budget,largest[e.groupId]?:0L)
-            Row(Modifier.fillMaxWidth().clickable{onClick(e)}.padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
+            if(LocalDensity.current.fontScale>1.25f||LocalConfiguration.current.screenWidthDp<340){
+                Column(Modifier.fillMaxWidth().background(if(emphasis==ExpenseEmphasis.Large)MaterialTheme.colorScheme.primaryContainer.copy(alpha=.32f) else MaterialTheme.colorScheme.background).clickable{onClick(e)}.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                        CategoryIcon(e.category,size=36)
+                        Text(e.description,Modifier.weight(1f),style=MaterialTheme.typography.bodyLarge,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                    Text(runCatching{LocalDate.parse(e.date).format(DateTimeFormatter.ofPattern("d MMM"))}.getOrDefault(e.date)+" · "+if(e.payers.size==1)"${book.personName(e.payers.keys.first())} paid ${money(e.amount)}" else "${e.payers.size} people paid ${money(e.amount)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalArrangement=Arrangement.spacedBy(4.dp)){
+                        Text(if(net>0)"you lent" else if(net<0)"you borrowed" else "your share",style=MaterialTheme.typography.labelSmall,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(money(if(net==0L)e.shares["self"]?:0 else kotlin.math.abs(net)),style=if(emphasis==ExpenseEmphasis.Large)MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.Bold else FontWeight.Normal,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if(showGroup)Text(book.groupName(e.groupId),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }else{
+            Row(Modifier.fillMaxWidth().background(if(emphasis==ExpenseEmphasis.Large)MaterialTheme.colorScheme.primaryContainer.copy(alpha=.32f) else MaterialTheme.colorScheme.background).clickable{onClick(e)}.padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
                 Column(Modifier.width(30.dp),horizontalAlignment=Alignment.CenterHorizontally){Text(runCatching{LocalDate.parse(e.date).format(DateTimeFormatter.ofPattern("MMM"))}.getOrDefault(""),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);Text(e.date.takeLast(2),style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}
                 CategoryIcon(e.category,size=36)
                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)){
                     Text(e.description,style=MaterialTheme.typography.bodyLarge,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.SemiBold else FontWeight.Normal)
                     Text(if(e.payers.size==1)"${book.personName(e.payers.keys.first())} paid ${money(e.amount)}" else "${e.payers.size} people paid ${money(e.amount)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    if(emphasis==ExpenseEmphasis.Large)Text("Large expense",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
                     if(showGroup)Text(book.groupName(e.groupId),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Column(horizontalAlignment=Alignment.End,modifier=Modifier.widthIn(max=112.dp)){
                     Text(if(net>0)"you lent" else if(net<0)"you borrowed" else "your share",style=MaterialTheme.typography.labelSmall,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(money(if(net==0L)e.shares["self"]?:0 else kotlin.math.abs(net)),style=MaterialTheme.typography.titleMedium,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.Bold else FontWeight.Normal,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(money(if(net==0L)e.shares["self"]?:0 else kotlin.math.abs(net)),style=if(emphasis==ExpenseEmphasis.Large)MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,fontWeight=if(emphasis==ExpenseEmphasis.Large)FontWeight.Bold else FontWeight.Normal,color=if(net>0)Owed else if(net<0)Owe else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
             }
         }
     }

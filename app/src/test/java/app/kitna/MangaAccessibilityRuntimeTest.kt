@@ -59,7 +59,7 @@ class MangaAccessibilityRuntimeTest {
                 else OnboardingScreen(onComplete = {}, onSignIn = {})
             }
         }
-        compose.onNodeWithText("Step 1 of 3").assertIsDisplayed()
+        compose.onNodeWithText("Start with local records").assertIsDisplayed()
         screenshot("manga-onboarding")
         compose.runOnIdle { help.value = true }
         compose.onNodeWithText("Help & support").assertIsDisplayed()
@@ -118,9 +118,9 @@ class MangaAccessibilityRuntimeTest {
         scrollTo("Remaining: ₹300.00")
         compose.onNodeWithText("Remaining: ₹300.00").assertIsDisplayed()
         screenshot("manga-budget-large-type")
-        scrollTo("Large expense")
-        compose.onNodeWithText("Large expense").assertIsDisplayed()
         scrollTo(bill.description)
+        compose.onNodeWithText("Large expense").assertDoesNotExist()
+        compose.onNodeWithText("₹4,850.00").assertIsDisplayed()
         compose.onNodeWithText(bill.description).performClick()
         assertTrue(opened)
         screenshot("manga-expense-large-type")

@@ -16,8 +16,13 @@ import java.io.FileOutputStream
 data class CloudUiState(
     val session: CloudSession? = null, val busy: Boolean = false, val ready: Boolean? = null,
     val message: String? = null, val lastSync: Long? = null, val pendingInvite: String? = null,
-    val invitationsReady: Boolean = false, val openGroupId: String? = null
+    val invitationsReady: Boolean = false, val openGroupId: String? = null,
+    val collaborationReady: Boolean = false, val pendingInviteKind: String = "group",
+    val friendInvitations: List<FriendInvitationStatus> = emptyList(),
+    val friendClaims: List<FriendIdentityClaim> = emptyList()
 )
+data class FriendInvitationStatus(val id: String, val name: String, val email: String, val incoming: Boolean, val status: String, val expiresAt: String)
+data class FriendIdentityClaim(val invitationId: String, val localPersonId: String, val accountName: String, val email: String, val userId: String)
 
 internal data class CloudServices(val http: CloudHttp, val auth: CloudAuth) {
     companion object { fun create(context: Context): CloudServices { val http = CloudHttp(); return CloudServices(http, CloudAuth(context, http)) } }
@@ -35,8 +40,12 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     private var poll: Job? = null
     private var foreground = false
     private val json = SharedBooks.json
+    private val invitationPreferences = app.getSharedPreferences("pending_invitations", Context.MODE_PRIVATE)
+    private val friendPreferences = app.getSharedPreferences("friend_connections", Context.MODE_PRIVATE)
 
     suspend fun initialize() {
+        val pendingToken = invitationPreferences.getString("token", null)
+        if (pendingToken != null) mutable.value = mutable.value.copy(pendingInvite = pendingToken, pendingInviteKind = invitationPreferences.getString("kind", "group") ?: "group")
         try {
             val session = auth.load()
             mutable.value = mutable.value.copy(session = session)
@@ -51,12 +60,17 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     }
     suspend fun beginSignIn(): Result<String> = perform { auth.begin() }
     fun receive(uri: Uri) {
+        val invitation = InvitationLinks.parse(uri)
+        if (invitation != null) {
+            val persisted = invitationPreferences.edit().putString("token", invitation.token).putString("kind", invitation.kind).commit()
+            mutable.value = mutable.value.copy(pendingInvite = invitation.token, pendingInviteKind = invitation.kind, message = if (persisted) null else "This invitation could not be kept for restart. Keep the original link to open again.")
+            return
+        }
         if (uri.scheme != "app.kitna") return
         if (uri.host == "group") {
             mutable.value = mutable.value.copy(openGroupId = uri.getQueryParameter("id")?.takeIf { it.length in 1..200 })
-        } else if (uri.host == "join") {
-            val token = uri.getQueryParameter("token")?.takeIf { it.length in 12..300 }
-            mutable.value = mutable.value.copy(pendingInvite = token, message = if (token == null) "This group invitation is invalid." else "Review and accept the group invitation in Shared groups.")
+        } else if (uri.host in setOf("join", "friend")) {
+            mutable.value = mutable.value.copy(message = "This group invitation is invalid.")
         } else if (uri.host == "auth" && uri.path == "/callback") scope.launch {
             perform {
                 val fresh = auth.exchange(uri)
@@ -66,7 +80,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
                 if (oldAccount != fresh.user.id) store.update { SharedBooks.withoutSharedCache(it) }
                 auth.accept(fresh)
                 if (store.book.value?.people?.firstOrNull { it.id == "self" }?.name == "You") store.update { book -> book.copy(people = book.people.map { if (it.id == "self") it.copy(name = fresh.user.name) else it }) }
-                mutable.value = mutable.value.copy(session = fresh.user)
+                mutable.value = mutable.value.copy(session = fresh.user, friendClaims = emptyList(), friendInvitations = emptyList())
                 notifications.setActiveAccount(fresh.user.id)
                 startPolling()
                 syncWork()
@@ -74,6 +88,10 @@ class CloudCoordinator internal constructor(context: Context, private val store:
         }
     }
     fun clearGroupNavigation() { mutable.value = mutable.value.copy(openGroupId = null) }
+    fun dismissInvitation() {
+        invitationPreferences.edit().clear().commit()
+        mutable.value = mutable.value.copy(pendingInvite = null)
+    }
     fun setForeground(value: Boolean) { foreground = value; if (value) startPolling() else { poll?.cancel(); poll = null } }
     private fun startPolling() {
         if (!foreground || mutable.value.session == null || poll?.isActive == true) return
@@ -90,7 +108,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     suspend fun sync(): Result<Unit> = perform {
         val status = http.json("POST", "/rest/v1/rpc/kitna_status", body = buildJsonObject {}).jsonObject
         check(status["ready"]?.jsonPrimitive?.booleanOrNull == true) { "Shared-group database setup is incomplete." }
-        mutable.value = mutable.value.copy(ready = true, invitationsReady = (status["schemaVersion"]?.jsonPrimitive?.intOrNull ?: 1) >= 2)
+        mutable.value = mutable.value.copy(ready = true, invitationsReady = (status["schemaVersion"]?.jsonPrimitive?.intOrNull ?: 1) >= 2, collaborationReady = (status["schemaVersion"]?.jsonPrimitive?.intOrNull ?: 1) >= 3)
         if (mutable.value.session != null) syncWork()
     }
     private suspend fun rpc(name: String, body: JsonObject): JsonElement {
@@ -128,9 +146,117 @@ class CloudCoordinator internal constructor(context: Context, private val store:
         require(result["error"] == null) { result["message"]?.jsonPrimitive?.contentOrNull ?: "This group code is invalid or expired." }
         val snapshot = json.decodeFromJsonElement<SharedSnapshot>(result)
         apply(snapshot)
-        mutable.value = mutable.value.copy(pendingInvite = null)
+        dismissInvitation()
+        val localId = store.book.value?.sharedGroups?.find { it.remoteId == snapshot.group.id }?.groupId
+        mutable.value = mutable.value.copy(openGroupId = localId)
         downloadPhotos(snapshot)
         syncWork()
+    }
+    suspend fun previewInvitation(token: String, kind: String): Result<JsonObject> = perform {
+        rpc(if (kind == "friend") "kitna_preview_friend_invite" else "kitna_preview_invite", buildJsonObject { put("p_token", token) }).jsonObject.also {
+            require(it["error"] == null) { it["message"]?.jsonPrimitive?.contentOrNull ?: "This invitation is invalid or expired." }
+        }
+    }
+    suspend fun groupInvitations(): Result<JsonArray> = perform { rpc("kitna_group_invitations", buildJsonObject {}).jsonArray }
+    suspend fun acceptGroupEmail(groupId: String): Result<Unit> = perform {
+        val snapshot = json.decodeFromJsonElement<SharedSnapshot>(rpc("kitna_accept_group_email", buildJsonObject { put("p_group_id", groupId) }))
+        apply(snapshot)
+        val localId = store.book.value?.sharedGroups?.find { it.remoteId == snapshot.group.id }?.groupId
+        mutable.value = mutable.value.copy(openGroupId = localId)
+    }
+    suspend fun addMembers(groupId: String, personIds: Set<String>): Result<Unit> = perform {
+        val link = memberLink(groupId)
+        val current = requireNotNull(store.book.value)
+        require(current.pendingChanges.none { it.groupId == groupId }) { "Finish syncing this group before adding members." }
+        val newPeople = personIds.filterNot { it in link.people }.map { id -> requireNotNull(current.people.find { it.id == id }) { "A selected friend no longer exists." } }
+        if (newPeople.isNotEmpty()) {
+            val mapping = newPeople.associate { it.id to java.util.UUID.nameUUIDFromBytes("kitna:${link.remoteId}:participant:${it.id}".toByteArray(Charsets.UTF_8)).toString() }
+            val result = rpc("kitna_add_members", buildJsonObject {
+                put("p_group_id", link.remoteId)
+                put("p_members", JsonArray(newPeople.map { person -> buildJsonObject { put("id", mapping.getValue(person.id)); put("name", person.name); if (person.email.isNotBlank()) put("email", EmailAddress.normalize(person.email)) } }))
+            })
+            val snapshot = json.decodeFromJsonElement<SharedSnapshot>(result)
+            downloadPhotos(snapshot)
+            store.update { book -> SharedBooks.applySnapshot(book.copy(sharedGroups = book.sharedGroups.map { if (it.groupId == groupId) it.copy(people = it.people + mapping) else it }), snapshot, link.accountId) }
+        }
+    }
+    suspend fun createFriendInvite(localPersonId: String? = null): Result<String> = perform {
+        val person = localPersonId?.let { id -> requireNotNull(store.book.value?.people?.find { it.id == id && id != "self" }) { "Choose a friend." } }
+        val result = rpc("kitna_friend_invite", buildJsonObject { put("p_name", person?.name ?: "Friend"); put("p_email", person?.email?.takeIf { it.isNotBlank() }?.let(::JsonPrimitive) ?: JsonNull) }).jsonObject
+        val id = result.getValue("id").jsonPrimitive.content
+        if (localPersonId != null) check(friendPreferences.edit().putString("${mutable.value.session!!.id}:$id", localPersonId).commit())
+        refreshFriends()
+        InvitationLinks.url("friend", result.getValue("token").jsonPrimitive.content)
+    }
+    suspend fun sendFriendEmail(localPersonId: String, email: String): Result<Unit> = perform {
+        val person = requireNotNull(store.book.value?.people?.find { it.id == localPersonId && it.id != "self" }) { "Choose a friend." }
+        val address = EmailAddress.normalize(email).also { require(it.isNotBlank()) { "Enter an email address." } }
+        val result = rpc("kitna_friend_invite", buildJsonObject { put("p_name", person.name); put("p_email", address) }).jsonObject
+        check(friendPreferences.edit().putString("${mutable.value.session!!.id}:${result.getValue("id").jsonPrimitive.content}", localPersonId).commit())
+        store.update { BookActions.savePerson(it, person.copy(email = address)) }
+        refreshFriends()
+    }
+    suspend fun acceptFriendInvitation(token: String? = null, invitationId: String? = null): Result<Unit> = perform {
+        val peer = if (token != null) rpc("kitna_accept_friend_invite", buildJsonObject { put("p_token", token) }).jsonObject
+            else rpc("kitna_accept_friend_email", buildJsonObject { put("p_id", requireNotNull(invitationId)) }).jsonObject
+        connectFriend(peer)
+        if (token != null) dismissInvitation()
+        refreshFriends()
+    }
+    suspend fun revokeFriendInvitation(id: String): Result<Unit> = perform {
+        rpc("kitna_revoke_friend_invite", buildJsonObject { put("p_id", id) }); refreshFriends()
+    }
+    suspend fun confirmFriendClaim(invitationId: String): Result<Unit> = perform {
+        val account = requireNotNull(mutable.value.session) { "Sign in with Google first." }
+        val claim = requireNotNull(mutable.value.friendClaims.find { it.invitationId == invitationId }) { "Refresh friends to review this connection again." }
+        val person = requireNotNull(store.book.value?.people?.find { it.id == claim.localPersonId && it.id != "self" }) { "The local friend no longer exists." }
+        require(person.accountId.isEmpty() || person.accountId == claim.userId) { "This friend is already connected to a different account." }
+        check(friendPreferences.edit().putString("${account.id}:confirmed:$invitationId", claim.userId).commit()) { "Could not save this connection. Try again." }
+        refreshFriends()
+    }
+    private suspend fun connectFriend(peer: JsonObject) {
+        val account = requireNotNull(mutable.value.session)
+        val remoteId = peer.getValue("userId").jsonPrimitive.content
+        if (remoteId == account.id) return
+        val email = peer["email"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val inviteId = peer["id"]?.jsonPrimitive?.contentOrNull
+        val mapped = inviteId?.let { friendPreferences.getString("${account.id}:$it", null) }
+        val label = peer["name"]?.jsonPrimitive?.contentOrNull?.take(100)?.ifBlank { "Kitna friend" } ?: "Kitna friend"
+        val historical = store.book.value?.people?.find { it.id == mapped && it.id != "self" }
+        if (historical != null) {
+            require(historical.accountId.isEmpty() || historical.accountId == remoteId) { "This historical friend is connected to another verified account." }
+            val verifiedEmailMatches = email.isNotEmpty() && historical.email.isNotEmpty() && historical.email.equals(email, true)
+            val confirmed = inviteId?.let { friendPreferences.getString("${account.id}:confirmed:$it", null) } == remoteId
+            if (historical.accountId.isEmpty() && !verifiedEmailMatches && !confirmed) {
+                val claim = FriendIdentityClaim(requireNotNull(inviteId), historical.id, label, email, remoteId)
+                mutable.value = mutable.value.copy(friendClaims = mutable.value.friendClaims.filterNot { it.invitationId == inviteId } + claim)
+                return
+            }
+        }
+        store.update { book ->
+            val mappedPerson = book.people.find { it.id == mapped && it.id != "self" && (it.accountId.isEmpty() || it.accountId == remoteId) }
+            val accountPerson = book.people.find { it.accountId == remoteId }
+            val emailPerson = book.people.find { it.id != "self" && email.isNotEmpty() && it.email.equals(email, true) && (it.accountId.isEmpty() || it.accountId == remoteId) }
+            val canonical = mappedPerson ?: emailPerson ?: accountPerson
+            var connected = book
+            if (canonical != null) {
+                listOfNotNull(accountPerson, emailPerson).distinctBy { it.id }.filter { it.id != canonical.id }.forEach {
+                    connected = BookActions.mergePeople(connected, canonical.id, it.id)
+                }
+            }
+            val existing = canonical?.let { value -> connected.people.find { it.id == value.id } }
+            val uniqueLabel = if (connected.people.any { it.id != existing?.id && it.name.equals(label, true) }) "${label.take(60)} (${email.ifBlank { remoteId.take(8) }.take(35)})" else label
+            BookActions.savePerson(connected, (existing ?: Person(name = uniqueLabel)).copy(accountId = remoteId, email = email.ifBlank { existing?.email.orEmpty() }))
+        }
+    }
+    private suspend fun refreshFriends() {
+        val result = rpc("kitna_friends", buildJsonObject {}).jsonObject
+        mutable.value = mutable.value.copy(friendClaims = emptyList())
+        result["friends"]?.jsonArray?.forEach { connectFriend(it.jsonObject) }
+        val pending = result["invitations"]?.jsonArray.orEmpty().map { value -> val row = value.jsonObject
+            FriendInvitationStatus(row.getValue("id").jsonPrimitive.content, row["name"]?.jsonPrimitive?.contentOrNull ?: "Friend", row["email"]?.jsonPrimitive?.contentOrNull.orEmpty(), row["incoming"]?.jsonPrimitive?.booleanOrNull == true, row["status"]?.jsonPrimitive?.contentOrNull ?: "pending", row["expiresAt"]?.jsonPrimitive?.contentOrNull.orEmpty())
+        }
+        mutable.value = mutable.value.copy(friendInvitations = pending)
     }
     suspend fun groupCode(groupId: String): Result<Pair<String, String>> = perform {
         require(mutable.value.invitationsReady) { "Group codes need the v0.6 database update. Ask the project owner to run the invitation migration, then sync again." }
@@ -168,7 +294,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
         store.update { SharedBooks.withoutSharedCache(it) }
         auth.clear()
         notifications.setActiveAccount(null)
-        mutable.value = mutable.value.copy(session = null, message = "Signed out. Local groups have been kept.", lastSync = null)
+        mutable.value = mutable.value.copy(session = null, message = "Signed out. Local groups have been kept.", lastSync = null, friendInvitations = emptyList(), friendClaims = emptyList())
     }
     suspend fun removeMember(groupId: String, localPersonId: String): Result<Unit> = perform {
         val link = memberLink(groupId)
@@ -196,6 +322,7 @@ class CloudCoordinator internal constructor(context: Context, private val store:
     }
     private suspend fun syncWork() {
         val account = checkNotNull(mutable.value.session)
+        if (mutable.value.collaborationReady) refreshFriends()
         val pending = store.book.value?.pendingChanges.orEmpty().filter { it.accountId == account.id && it.error == null }
         for (change in pending) {
             if (store.book.value?.pendingChanges?.find { it.id == change.id }?.error != null) continue

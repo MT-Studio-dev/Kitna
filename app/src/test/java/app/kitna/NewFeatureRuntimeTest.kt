@@ -12,10 +12,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.LooperMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], qualifiers = "w360dp-h800dp-xhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 class NewFeatureRuntimeTest {
     @get:Rule(order = 0) val cleanBook = CleanLocalBookRule()
@@ -28,7 +30,7 @@ class NewFeatureRuntimeTest {
     }
 
     private fun waitForEditorToClose() {
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Save").fetchSemanticsNodes().isEmpty() && compose.onAllNodesWithText("Saving…").fetchSemanticsNodes().isEmpty() && compose.onAllNodesWithText("Friend's name").fetchSemanticsNodes().isEmpty() }
     }
 
     private fun seed(expenses: List<Expense> = emptyList(), withGroup: Boolean = true) {
@@ -64,20 +66,24 @@ class NewFeatureRuntimeTest {
         addExpense()
         compose.onNodeWithText("Description").performTextInput("Shared bill")
         compose.onNodeWithText("Total amount").performScrollTo().performTextInput("1000")
+        compose.onNodeWithContentDescription("Choose payer").performClick()
         compose.onNodeWithContentDescription("Multiple people paid").performScrollTo().performClick()
         compose.onNodeWithText("You paid · ₹").performScrollTo().performTextInput("450")
         compose.onNodeWithText("Remaining: ₹550.00").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Alex paid · ₹").performScrollTo().performTextInput("600")
         compose.onNodeWithText("Overpaid: ₹50.00").performScrollTo().assertIsDisplayed()
 
+        compose.onNodeWithText("Done").performClick()
         compose.onNodeWithText("Save").performClick()
         waitForText("Payer contributions must equal the expense total.")
         compose.onNodeWithText("Description").assertTextContains("Shared bill")
         assertTrue(vm.book.value!!.expenses.isEmpty())
 
+        compose.onNodeWithContentDescription("Choose payer").performClick()
         compose.onNodeWithContentDescription("Use remaining for Alex").performScrollTo().performClick()
         compose.onNodeWithText("Alex paid · ₹").assertTextContains("550.00")
         compose.onNodeWithText("Remaining: ₹0.00").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Done").performClick()
         compose.onNodeWithText("Save").performClick()
         waitForEditorToClose()
         val saved = durableBook().expenses.single()
@@ -91,13 +97,17 @@ class NewFeatureRuntimeTest {
         addExpense()
         compose.onNodeWithText("Description").performTextInput("Train ticket")
         compose.onNodeWithText("Travel").assertExists()
+        compose.onNodeWithContentDescription("Category: Travel").performClick()
         compose.onNodeWithContentDescription("Auto-categorize expenses").assertIsOn()
-        compose.onNodeWithText("Travel").performClick()
         compose.onNodeWithText("Food").performClick()
+        compose.onNodeWithContentDescription("Category: Food").performClick()
         compose.onNodeWithContentDescription("Auto-categorize expenses").assertIsOff()
+        compose.onNodeWithText("Done").performClick()
         compose.onNodeWithText("Description").performScrollTo().performTextReplacement("Car rental")
         compose.onNodeWithText("Food").assertExists()
+        compose.onNodeWithContentDescription("Category: Food").performClick()
         compose.onNodeWithContentDescription("Auto-categorize expenses").performScrollTo().performClick()
+        compose.onNodeWithText("Done").performClick()
         compose.onNodeWithText("Travel").assertExists()
         compose.onNodeWithText("Total amount").performScrollTo().performTextInput("100")
         compose.onNodeWithText("Save").performClick()
@@ -118,7 +128,9 @@ class NewFeatureRuntimeTest {
         waitForText("Expense details")
         compose.onNodeWithText("Edit").performClick()
         compose.onNodeWithText("Food").assertExists()
+        compose.onNodeWithContentDescription("Category: Food").performClick()
         compose.onNodeWithContentDescription("Auto-categorize expenses").assertIsOff()
+        compose.onNodeWithText("Done").performClick()
         compose.onNodeWithText("Description").performTextReplacement("Taxi to the station")
         compose.onNodeWithText("Food").assertExists()
         compose.onNodeWithText("Save").performClick()
@@ -133,20 +145,23 @@ class NewFeatureRuntimeTest {
         seed(withGroup = false)
         compose.onNodeWithContentDescription("Create group").performClick()
         compose.onNodeWithText("Group name").performTextInput("Blue trip")
+        compose.onNodeWithText("Add members \u00b7 1 selected").performScrollTo().performClick()
         compose.onNodeWithText("Alex").performScrollTo().performClick()
         compose.onNodeWithText("Choose icon and colour").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Group icon plane").performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithContentDescription("Group colour blue").performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithText("Done").performClick()
-        compose.onNodeWithText("Plane · Blue").assertExists()
+        compose.onNodeWithText("Group appearance").assertDoesNotExist()
+        compose.onNodeWithContentDescription("plane icon, blue group color").assertExists()
 
         compose.onNodeWithText("Choose icon and colour").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Group icon car").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Group colour red").performScrollTo().performClick()
         compose.onAllNodesWithText("Cancel").onLast().performClick()
-        compose.onNodeWithText("Plane · Blue").assertExists()
+        compose.onNodeWithContentDescription("plane icon, blue group color").assertExists()
         compose.onNodeWithText("Save").performClick()
         waitForEditorToClose()
+        compose.onNodeWithText("Skip for now").performClick()
         val saved = durableBook().groups.single()
         assertEquals("Blue trip", saved.name)
         assertEquals("plane", saved.icon)
