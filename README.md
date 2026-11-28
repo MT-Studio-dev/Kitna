@@ -2,6 +2,8 @@
 
 Kitna is MT Studio's Android expense tracker. Keep local records without an account, or sign in with Google to collaborate on selected expense ledgers through Supabase. Kitna records external repayments; it does not move money or verify bank transfers.
 
+**Download:** [Kitna v0.7.1 development APK](https://github.com/MT-Studio-dev/Kitna/releases/download/v0.7.1/Kitna-0.7.1-dev.apk) · [Release notes and checksum](https://github.com/MT-Studio-dev/Kitna/releases/tag/v0.7.1)
+
 ## Version 0.7.1
 
 - Replaced brown/warm base colors with cool indigo/slate light and dark themes. Larger expenses use visual emphasis without a caption. Settle up now focuses on payer, recipient and amount, with optional details hidden.
